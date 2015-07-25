@@ -1,0 +1,79 @@
+name:                idris-cil
+version:             0.1.0.0
+synopsis:            A Common Intermediate Language backend for Idris.
+description:         A Common Intermediate Language backend for Idris.
+homepage:            https://github.com/bamboo/idris-cil
+license:             BSD3
+license-file:        LICENSE
+author:              Rodrigo B. de Oliveira
+maintainer:          Rodrigo B. de Oliveira <rbo@acm.org>
+category:            Language
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.18
+
+library
+  default-language: Haskell2010
+  ghc-prof-options: -auto-all -caf-all
+  ghc-options:      -rtsopts -funbox-strict-fields
+  hs-source-dirs:   src
+  exposed-modules:  IRTS.CodegenCil
+  build-depends:    base >= 4.7 && <5
+                  , containers
+                  , directory
+                  , dlist >= 0.7.1.1
+                  , filepath
+                  , idris >= 0.9.18.1
+                  , language-cil >= 0.3.1
+                  , mtl
+                  , text
+                  , transformers
+
+executable idris-cil
+  main-is:            Main.hs
+  build-depends:      base >= 4.7 && <5
+                    , containers
+                    , directory
+                    , filepath
+                    , haskeline
+                    , idris >= 0.9.18.1
+                    , mtl
+                    , text
+                    , transformers
+                    , idris-cil
+  hs-source-dirs:     main
+  default-language:   Haskell2010
+  ghc-prof-options:  -auto-all -caf-all
+  ghc-options:       -threaded -rtsopts -funbox-strict-fields
+
+test-suite spec
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N -debug -funbox-strict-fields
+  hs-source-dirs:   test
+  main-is:          Spec.hs
+  build-depends:    aeson
+                  , async
+                  , base >= 4 && < 5
+                  , mtl
+                  , transformers
+                  , filepath >= 1.3.0.2
+                  , process >= 1.2.0.0
+                  , hspec >= 1.3
+                  , smallcheck
+                  , hspec-smallcheck
+                  , idris >= 0.9.18.1
+                  , idris-cil
+
+test-suite hlint
+  default-language: Haskell2010
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+  type:             exitcode-stdio-1.0
+  build-depends:    base >= 4 && < 5
+                  , hlint == 1.9.*
+  hs-source-dirs:   test
+  main-is:          HLint.hs
+
+source-repository head
+  type:     git
+  location: https://github.com/bamboo/idris-cil
