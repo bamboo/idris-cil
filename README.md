@@ -38,7 +38,7 @@ Compile it to cil and execute it with mono:
 
 ```
 idris --codegen cil Main.idr -o HelloWorld.il \
-  && ilasm Main.il \
+  && ilasm HelloWorld.il \
   && mono HelloMono.exe
 ```
 
