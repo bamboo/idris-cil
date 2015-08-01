@@ -59,8 +59,9 @@ test-suite spec
                   , mtl
                   , transformers
                   , transformers-compat
-                  , filepath >= 1.3.0.2
-                  , process >= 1.2.0.0
+                  , filepath
+                  , process
+                  , directory
                   , hspec >= 1.3
                   , smallcheck
                   , hspec-smallcheck
