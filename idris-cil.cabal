@@ -26,6 +26,7 @@ library
                   , idris >= 0.9.18.1
                   , language-cil >= 0.3.1
                   , mtl
+                  , process
                   , text
                   , transformers
 

@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLists #-}
 module IRTS.CodegenCil where
 
-import           Control.Monad (unless)
+import           Control.Monad (unless, when)
 import           Control.Monad.State (State, get, evalState)
 import           Control.Monad.Trans.Writer.Strict (WriterT, tell, execWriterT)
 import           Data.Char
@@ -13,10 +13,19 @@ import           IRTS.Simplified
 import           Idris.Core.TT
 import           Language.Cil
 import qualified Language.Cil as Cil
-import           System.FilePath (takeBaseName)
+import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
+import           System.Process (readProcess)
 
 codegenCil :: CodeGenerator
-codegenCil ci = writeFile (outputFile ci) $ pr (assemblyFor ci) ""
+codegenCil ci = do writeFile cilFile $ pr (assemblyFor ci) ""
+                   when (outputExtension /= ".il") $
+                     ilasm cilFile output
+  where cilFile = replaceExtension output "il"
+        output  = outputFile ci
+        outputExtension = takeExtension output
+
+ilasm :: String -> String -> IO ()
+ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= putStr
 
 assemblyFor :: CodegenInfo -> Assembly
 assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType]

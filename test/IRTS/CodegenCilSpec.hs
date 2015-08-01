@@ -28,11 +28,9 @@ run code = do
   writeFile input code
   ci <- compileCodegenInfo input output
   codegenCil ci
-  ilasm output
-  mono exe
+  mono output
   where input  = "/tmp/cil-test.idr"
-        output = "/tmp/cil-test.il"
-        exe    = "/tmp/cil-test.exe"
+        output = "/tmp/cil-test.exe"
 
 evalIdris :: Monad m => IState -> StateT IState (ExceptT e m) a -> m (Either e a)
 evalIdris istate prog = runExceptT $ evalStateT prog istate
@@ -50,9 +48,6 @@ codegenInfoFrom inputs output = do
   loadInputs inputs Nothing
   mainProg <- elabMain
   compile (Via "cil") output (Just mainProg)
-
-ilasm :: String -> IO ()
-ilasm ilFile = readProcess "ilasm" [ilFile] "" >>= (\_ -> return ())
 
 mono :: String -> IO String
 mono exe = readProcess "mono" [exe] ""
