@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLists #-}
 module IRTS.CodegenCil where
 
-import           Control.Monad (unless, when)
+import           Control.Monad (unless, when, forM_)
 import           Control.Monad.State (State, get, evalState)
 import           Control.Monad.Trans.Writer.Strict (WriterT, tell, execWriterT)
 
@@ -15,6 +15,7 @@ import           System.Process (readProcess)
 import           IRTS.CodegenCommon
 import           IRTS.Lang
 import           IRTS.Simplified
+import           Idris.Core.CaseTree (CaseType(Shared))
 import           Idris.Core.TT
 
 import           Language.Cil
@@ -79,6 +80,9 @@ cil (SConst (Str s)) = tell [ldstr s]
 cil SNothing = tell [ldnull]
 cil (SOp op args) = cgOp op args
 
+cil (SCon _ 0 _ _) = tell [ ldc_i4 0, box systemBoolean ]
+cil (SCon _ 1 _ _) = tell [ ldc_i4 1, box systemBoolean ]
+
 cil (SCon _ t _ fs) = do
   tell [ ldc t
        , ldc $ length fs
@@ -90,6 +94,22 @@ cil (SCon _ t _ fs) = do
           tell [dup, ldc_i4 i]
           load f
           tell [stelem_ref]
+{-
+SFun Prelude.Bool.ifThenElse [{e0},{e1},{e2},{e3}] 1
+  (SCase Shared (Loc 1)
+    [SConCase 4 0 Prelude.Bool.False [] (SApp True {EVAL0} [Loc 3])
+    ,SConCase 4 1 Prelude.Bool.True [] (SApp True {EVAL0} [Loc 2])]))
+-}
+cil (SCase Shared v [ SConCase _ 0 (NS (UN "False") ["Bool", "Prelude"]) [] elseAlt
+                    , SConCase _ 1 (NS (UN "True")  ["Bool", "Prelude"]) [] thenAlt]) = do
+  load v
+  tell [ unbox_any systemBoolean
+       , brtrue "THEN" ]
+  cil elseAlt
+  tell [ br "END"
+       , label "THEN" ]
+  cil thenAlt
+  tell [ label "END" ]
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) | canBuildJumpTable alts = do
@@ -120,6 +140,9 @@ cil (SApp isTailCall n args) = do
 cil e = do
   decl <- get
   error $ "Unsupported expression `" ++ show e ++ "' in\n" ++ show decl
+
+systemBoolean :: PrimitiveType
+systemBoolean = ValueType "mscorlib" "System.Boolean"
 
 ldc :: (Integral n) => n -> MethodDecl
 ldc = ldc_i4 . fromIntegral
@@ -157,7 +180,17 @@ cgOp LWriteStr [_, s] = do
        , call [] Void "mscorlib" "System.Console" "Write" [String]
        , ldnull
        ]
+
+cgOp LStrConcat args = do
+  forM_ args loadString
+  tell [ call [] String "mscorlib" "System.String" "Concat" (map (const String) args) ]
+
 cgOp o _ = error $ "Unsupported operation: " ++ show o
+
+loadString :: LVar -> CilCodegen ()
+loadString l = do
+  load l
+  tell [ castclass String ]
 
 load :: LVar -> CilCodegen ()
 load (Loc i) = do
