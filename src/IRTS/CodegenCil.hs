@@ -4,17 +4,21 @@ module IRTS.CodegenCil where
 import           Control.Monad (unless, when)
 import           Control.Monad.State (State, get, evalState)
 import           Control.Monad.Trans.Writer.Strict (WriterT, tell, execWriterT)
+
 import           Data.Char
 import           Data.DList (DList, fromList, toList, append)
 import qualified Data.Text as T
+
+import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
+import           System.Process (readProcess)
+
 import           IRTS.CodegenCommon
 import           IRTS.Lang
 import           IRTS.Simplified
 import           Idris.Core.TT
+
 import           Language.Cil
 import qualified Language.Cil as Cil
-import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
-import           System.Process (readProcess)
 
 codegenCil :: CodeGenerator
 codegenCil ci = do writeFile cilFile $ pr (assemblyFor ci) ""
@@ -97,7 +101,7 @@ cil (SChkCase v alts) | canBuildJumpTable alts = do
        , switch labels
        ]
   mapM_ (cgAlt v) (zip labels alts)
-  tell [label "END"]
+  tell [ label "END" ]
   where canBuildJumpTable (SConCase _ t _ _ _ : xs) = canBuildJumpTable' t xs
         canBuildJumpTable _                         = False
         canBuildJumpTable' t (SConCase _ t' _ _ _ : xs) | t' == t + 1 = canBuildJumpTable' t' xs
@@ -109,8 +113,8 @@ cil (SChkCase v alts) | canBuildJumpTable alts = do
 cil (SApp isTailCall n args) = do
   mapM_ load args
   if isTailCall
-    then tell [tailcall app]
-    else tell [app]
+    then tell [ tailcall app, ret ]
+    else tell [ app ]
   where app = call [] Cil.Object "" "M" (defName n) (map (const Cil.Object) args)
 
 cil e = do
@@ -131,7 +135,6 @@ cgAlt v (l, SConCase _ _ _ fs sexp) = do
     mapM_ loadElement (zip [0..] fs)
     tell [pop]
   cil sexp
-  tell [ret]
   where loadElement :: (Int, Name) -> CilCodegen ()
         loadElement (e, MN i _) = tell [ dup
                                        , ldc e
