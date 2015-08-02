@@ -1,15 +1,18 @@
 module IRTS.CodegenCilSpec where
 
 import           Control.Applicative ((<$>))
+import           Control.Arrow ((>>>))
 import           Control.Monad (forM_)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT)
 import           Control.Monad.Trans.State.Strict (StateT, evalStateT)
+
 import           IRTS.CodegenCil
 import           IRTS.CodegenCommon
 import           IRTS.Compiler
 import           Idris.AbsSyntax
 import           Idris.ElabDecls
 import           Idris.REPL
+
 import           System.Directory
 import           System.FilePath
 import           System.Process
@@ -40,7 +43,7 @@ listFilesWithExtension ext dir = do
 
 firstCommentIn :: FilePath -> IO String
 firstCommentIn f = takeComment <$> readFile f
-  where takeComment = unlines . takeWhile (/= "-}") . drop 1 . lines
+  where takeComment = lines >>> takeWhile (/= "-}") >>> drop 1 >>> unlines
 
 exec :: FilePath -> IO String
 exec input = do
