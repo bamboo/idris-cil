@@ -22,7 +22,8 @@ import qualified Test.Hspec as H
 spec :: Spec
 spec = describe "idris-cil" $ do
   files <- H.runIO testCaseFiles
-  forM_ files testCaseForFile
+  H.runIO $ compileToBytecode files
+  parallel $ forM_ files testCaseForFile
 
 testCaseFiles :: IO [FilePath]
 testCaseFiles = do
@@ -52,12 +53,15 @@ exec input = do
   mono output
   where output = replaceExtension input "exe"
 
+compileToBytecode :: [FilePath] -> IO ()
+compileToBytecode files = readProcess "idris" (options ++ files) "" >>= putStrLn
+  where options = ["--typeintype", "--check", "--quiet"]
+
 evalIdris :: Monad m => IState -> StateT IState (ExceptT e m) a -> m (Either e a)
 evalIdris istate prog = runExceptT $ evalStateT prog istate
 
 compileCodegenInfo :: String -> String -> IO CodegenInfo
 compileCodegenInfo input output = do
-  runMain $ idrisMain [Filename input, UseCodegen Bytecode, NoCoverage, NoREPL, NoBanner, Quiet]
   Right ci <- evalIdris idrisInit $ codegenInfoFrom [bytecodeFile] output
   return ci
   where bytecodeFile = replaceExtension input "ibc"

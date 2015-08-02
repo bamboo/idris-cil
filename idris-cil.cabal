@@ -50,7 +50,8 @@ executable idris-cil
 test-suite spec
   default-language: Haskell2010
   type:             exitcode-stdio-1.0
-  ghc-options:      -threaded -rtsopts -with-rtsopts=-N -debug -funbox-strict-fields
+  ghc-options:      -funbox-strict-fields -threaded -rtsopts -with-rtsopts=-N
+  ghc-prof-options: -auto-all -caf-all
   hs-source-dirs:   test
   main-is:          Spec.hs
   build-depends:    aeson
