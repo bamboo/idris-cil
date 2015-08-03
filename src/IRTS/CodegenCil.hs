@@ -5,7 +5,6 @@ import           Control.Monad (unless, when, forM_)
 import           Control.Monad.State (State, get, evalState)
 import           Control.Monad.Trans.Writer.Strict (WriterT, tell, execWriterT)
 
-import           Data.Char
 import           Data.DList (DList, fromList, toList, append)
 import qualified Data.Text as T
 
@@ -33,9 +32,14 @@ ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= putStr
 
 assemblyFor :: CodegenInfo -> Assembly
-assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType]
+assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, consType]
   where asmName  = quoted $ takeBaseName (outputFile ci)
-        quoted n = "'" ++ n ++ "'"
+
+quoted :: String -> String
+quoted n = "'" ++ map validChar n ++ "'"
+  where validChar c = if c == '\''
+                         then '`'
+                         else c
 
 moduleFor :: CodegenInfo -> TypeDef
 moduleFor ci = classDef [CaPrivate] "M" noExtends noImplements [] methods []
@@ -76,12 +80,17 @@ cil (SLet (Loc i) v e) = do
   cil e
 
 cil (SV v) = load v
-cil (SConst (Str s)) = tell [ldstr s]
+cil (SConst c) = cgConst c
 cil SNothing = tell [ldnull]
 cil (SOp op args) = cgOp op args
 
-cil (SCon _ 0 _ _) = tell [ ldc_i4 0, box systemBoolean ]
-cil (SCon _ 1 _ _) = tell [ ldc_i4 1, box systemBoolean ]
+cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, box systemBoolean ]
+cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, box systemBoolean ]
+cil (SCon _ 0 n []) | n == listNil   = tell [ loadNil ]
+cil (SCon _ 1 n [x, xs]) | n == listCons = do load x
+                                              load xs
+                                              tell [ castclass consTypeRef
+                                                   , newobj "" "Cons" [Cil.Object, consTypeRef] ]
 
 cil (SCon _ t _ fs) = do
   tell [ ldc t
@@ -95,13 +104,10 @@ cil (SCon _ t _ fs) = do
           load f
           tell [stelem_ref]
 {-
-SFun Prelude.Bool.ifThenElse [{e0},{e1},{e2},{e3}] 1
-  (SCase Shared (Loc 1)
-    [SConCase 4 0 Prelude.Bool.False [] (SApp True {EVAL0} [Loc 3])
-    ,SConCase 4 1 Prelude.Bool.True [] (SApp True {EVAL0} [Loc 2])]))
+Prelude.Bool.ifThenElse
 -}
-cil (SCase Shared v [ SConCase _ 0 (NS (UN "False") ["Bool", "Prelude"]) [] elseAlt
-                    , SConCase _ 1 (NS (UN "True")  ["Bool", "Prelude"]) [] thenAlt]) = do
+cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
+                    , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue = do
   load v
   tell [ unbox_any systemBoolean
        , brtrue "THEN" ]
@@ -110,6 +116,29 @@ cil (SCase Shared v [ SConCase _ 0 (NS (UN "False") ["Bool", "Prelude"]) [] else
        , label "THEN" ]
   cil thenAlt
   tell [ label "END" ]
+
+cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
+                    , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
+  load v
+  tell [ loadNil
+       , beq "NIL" ]
+  load v
+  tell [ castclass consTypeRef
+       , dup
+       , ldfld Cil.Object "" "Cons" "car"
+       , bind x
+       , ldfld consTypeRef "" "Cons" "cdr"
+       , bind xs
+       ]
+  cil consAlt
+  tell [ br "END"
+       , label "NIL" ]
+  cil nilAlt
+  tell [ label "END" ]
+  where bind (MN i _) = stloc i
+
+cil e@(SCase Shared _ _) = tell [ comment $ "NOT IMPLEMENTED: " ++ show e
+                                , ldnull ]
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) | canBuildJumpTable alts = do
@@ -133,7 +162,7 @@ cil (SChkCase v alts) | canBuildJumpTable alts = do
 cil (SApp isTailCall n args) = do
   mapM_ load args
   if isTailCall
-    then tell [ tailcall app, ret ]
+    then tell [ tailcall app, ret, ldnull ]
     else tell [ app ]
   where app = call [] Cil.Object "" "M" (defName n) (map (const Cil.Object) args)
 
@@ -147,12 +176,34 @@ systemBoolean = ValueType "mscorlib" "System.Boolean"
 ldc :: (Integral n) => n -> MethodDecl
 ldc = ldc_i4 . fromIntegral
 
+cgConst :: Const -> CilCodegen ()
+cgConst (Str s) = tell [ldstr s]
+cgConst (BI i) = tell [ ldc i
+                      , boxInteger ]
+{-
+  = I Int
+  | BI Integer
+  | Fl Double
+  | Ch Char
+  | Str String
+  | B8 GHC.Word.Word8
+  | B16 GHC.Word.Word16
+  | B32 GHC.Word.Word32
+  | B64 GHC.Word.Word64
+  | AType ArithTy
+  | StrType
+  | WorldType
+  | TheWorld
+  | VoidType
+  | Forgot
+-}
+
 cgAlt :: LVar -> (Label, SAlt) -> CilCodegen ()
 cgAlt v (l, SConCase _ _ _ fs sexp) = do
   tell [label l]
   unless (null fs) $ do
     load v
-    tell [ castclass (ReferenceType "" "SCon")
+    tell [ castclass sconTypeRef
          , ldfld array "" "SCon" "fields"
          ]
     mapM_ loadElement (zip [0..] fs)
@@ -185,12 +236,32 @@ cgOp LStrConcat args = do
   forM_ args loadString
   tell [ call [] String "mscorlib" "System.String" "Concat" (map (const String) args) ]
 
+cgOp (LPlus _) args = do
+  forM_ args loadInteger
+  tell [ add
+       , boxInteger ]
+
+cgOp (LIntStr _) [i] = do
+  load i
+  tell [ callvirt String "mscorlib" "System.Object" "ToString" [] ]
+
 cgOp o _ = error $ "Unsupported operation: " ++ show o
+
+boxInteger :: MethodDecl
+boxInteger = box (ValueType "mscorlib" "System.Int32")
+
+loadInteger :: LVar -> CilCodegen ()
+loadInteger l = do
+  load l
+  tell [ unbox_any integerType ]
 
 loadString :: LVar -> CilCodegen ()
 loadString l = do
   load l
   tell [ castclass String ]
+
+loadNil :: MethodDecl
+loadNil = ldsfld consTypeRef "" "Cons" "Nil"
 
 load :: LVar -> CilCodegen ()
 load (Loc i) = do
@@ -231,20 +302,41 @@ someSExp _                     = True
 -- | codes should be filtered out before storing or comparing
 -- | identifiers.
 cilName :: Name -> String
-cilName (UN t)   = T.unpack t
-cilName (MN i t) = T.unpack t ++ show i
+cilName (UN t)   = quoted $ T.unpack t
+cilName (MN i t) = quoted $ T.unpack t ++ show i
+cilName (SN sn)  = quoted $ show sn
 cilName e = error $ "Unsupported name `" ++ show e ++ "'"
 
 defName :: Name -> MethodName
 defName (NS n _) = cilName n
-defName (SN sn)  = map validChar (show sn)
-  where validChar ch =
-          if isIdentifierChar ch
-             then ch
-             else '_'
-        isIdentifierChar ch = isAlphaNum ch || (isMark ch && nonSpace ch)
-        nonSpace = Prelude.not . isSpace
 defName n = cilName n
+
+consType :: TypeDef
+consType = classDef [CaPrivate] className noExtends noImplements
+                    [car, cdr, nil] [ctor, cctor] []
+  where className = "Cons"
+        nil       = Field [FaStatic, FaPublic] consTypeRef "Nil"
+        cctor     = Constructor [MaStatic] Void []
+                      [ ldnull
+                      , ldnull
+                      , newobj "" className [Cil.Object, consTypeRef]
+                      , stsfld consTypeRef "" className "Nil"
+                      , ret
+                      ]
+        car       = Field [FaPublic] Cil.Object "car"
+        cdr       = Field [FaPublic] consTypeRef "cdr"
+        ctor      = Constructor [MaPublic] Void [ Param Nothing Cil.Object "car"
+                                                , Param Nothing consTypeRef "cdr" ]
+                      [ ldarg 0
+                      , call [CcInstance] Void "" "object" ".ctor" []
+                      , ldarg 0
+                      , ldarg 1
+                      , stfld Cil.Object "" className "car"
+                      , ldarg 0
+                      , ldarg 2
+                      , stfld consTypeRef "" className "cdr"
+                      , ret
+                      ]
 
 sconType :: TypeDef
 sconType = classDef [CaPrivate] className noExtends noImplements
@@ -253,7 +345,7 @@ sconType = classDef [CaPrivate] className noExtends noImplements
         sconTag    = Field [FaPublic] Int32 "tag"
         sconFields = Field [FaPublic] array "fields"
         sconCtor   = Constructor [MaPublic] Void [ Param Nothing Int32 "tag"
-                                                 , Param Nothing array "fields"]
+                                                 , Param Nothing array "fields" ]
                      [ ldarg 0
                      , call [CcInstance] Void "" "object" ".ctor" []
                      , ldarg 0
@@ -265,10 +357,25 @@ sconType = classDef [CaPrivate] className noExtends noImplements
                      , ret
                      ]
 
+consTypeRef, sconTypeRef :: PrimitiveType
+consTypeRef = ReferenceType "" "Cons"
+sconTypeRef = ReferenceType "" "SCon"
+
 array :: PrimitiveType
 array = Array Cil.Object
+
+integerType :: PrimitiveType
+integerType = ValueType "mscorlib" "System.Int32"
 
 consoleWriteLine :: String -> DList MethodDecl
 consoleWriteLine s = [ ldstr s
                      , call [] Void "mscorlib" "System.Console" "WriteLine" [String]
                      ]
+
+boolFalse, boolTrue, listNil, listCons :: Name
+
+boolFalse = NS (UN "False") ["Bool", "Prelude"]
+boolTrue  = NS (UN "True") ["Bool", "Prelude"]
+
+listNil  = NS (UN "Nil") ["List", "Prelude"]
+listCons = NS (UN "::")  ["List", "Prelude"]
