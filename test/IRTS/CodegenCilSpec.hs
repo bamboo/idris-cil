@@ -2,7 +2,7 @@ module IRTS.CodegenCilSpec where
 
 import           Control.Applicative ((<$>))
 import           Control.Arrow ((>>>))
-import           Control.Monad (forM_)
+import           Control.Monad (forM_, when)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT)
 import           Control.Monad.Trans.State.Strict (StateT, evalStateT)
 
@@ -14,6 +14,7 @@ import           Idris.ElabDecls
 import           Idris.REPL
 
 import           System.Directory
+import           System.Exit
 import           System.FilePath
 import           System.Process
 import           Test.Hspec
@@ -50,6 +51,7 @@ exec :: FilePath -> IO String
 exec input = do
   ci <- compileCodegenInfo input output
   codegenCil ci
+  peverify output
   mono output
   where output = replaceExtension input "exe"
 
@@ -75,3 +77,10 @@ codegenInfoFrom inputs output = do
 
 mono :: String -> IO String
 mono exe = readProcess "mono" [exe] ""
+
+peverify :: String -> IO ()
+peverify exe = do
+  (code, stdout, stderr) <- readProcessWithExitCode "peverify" [exe] ""
+  case code of
+    ExitFailure _ -> error $ "peverify error: " ++ stdout ++ stderr
+    _             -> return ()
