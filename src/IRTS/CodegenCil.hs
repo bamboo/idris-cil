@@ -32,10 +32,10 @@ assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, consTyp
   where asmName  = quoted $ takeBaseName (outputFile ci)
 
 quoted :: String -> String
-quoted n = "'" ++ map validChar n ++ "'"
+quoted n = "'" ++ concatMap validChar n ++ "'"
   where validChar c = if c == '\''
-                         then '`'
-                         else c
+                         then "\\'"
+                         else [c]
 
 moduleFor :: CodegenInfo -> TypeDef
 moduleFor ci = classDef [CaPrivate] "M" noExtends noImplements [] methods []
