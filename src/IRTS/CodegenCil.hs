@@ -1,13 +1,9 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLists #-}
 module IRTS.CodegenCil where
 
-import           Control.Monad (unless, when, forM_)
-import           Control.Monad.State (State, get, evalState)
-import           Control.Monad.Trans.Writer.Strict (WriterT, tell, execWriterT)
-
+import           Control.Monad.RWS.Strict hiding (local)
 import           Data.DList (DList, fromList, toList, append)
 import qualified Data.Text as T
-
 import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
 import           System.Process (readProcess)
 
@@ -66,10 +62,10 @@ method decl@(SFun name ps lc sexp) = Method attrs retType (defName name) paramet
         local i    = Local Cil.Object ("l" ++ show i)
         isEntryPoint = name == entryPointName
 
-type CilCodegen a = WriterT (DList MethodDecl) (State SDecl) a
+type CilCodegen a = RWS SDecl (DList MethodDecl) Int a
 
 cilFor :: SDecl -> SExp -> DList MethodDecl
-cilFor decl sexp = evalState (execWriterT $ cil sexp) decl
+cilFor decl sexp = snd $ evalRWS (cil sexp) decl 0
 
 cil :: SExp -> CilCodegen ()
 cil (SLet (Loc _) SNothing e) = cil e
@@ -108,20 +104,26 @@ Prelude.Bool.ifThenElse
 -}
 cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
                     , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue = do
+  thenLabel <- newLabel "THEN"
+  endLabel  <- newLabel "END"
   load v
   tell [ unbox_any systemBoolean
-       , brtrue "THEN" ]
+       , brtrue thenLabel ]
   cil elseAlt
-  tell [ br "END"
-       , label "THEN" ]
+  tell [ br endLabel
+       , label thenLabel ]
   cil thenAlt
-  tell [ label "END" ]
+  tell [ label endLabel ]
 
 cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
                     , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
+
+  nilLabel <- newLabel "NIL"
+  endLabel <- newLabel "END"
+
   load v
   tell [ loadNil
-       , beq "NIL" ]
+       , beq nilLabel ]
   load v
   tell [ castclass consTypeRef
        , dup
@@ -131,10 +133,10 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
        , bind xs
        ]
   cil consAlt
-  tell [ br "END"
-       , label "NIL" ]
+  tell [ br endLabel
+       , label nilLabel ]
   cil nilAlt
-  tell [ label "END" ]
+  tell [ label endLabel ]
   where bind (MN i _) = stloc i
 
 cil e@(SCase Shared _ _) = tell [ comment $ "NOT IMPLEMENTED: " ++ show e
@@ -247,6 +249,12 @@ cgOp (LIntStr _) [i] = do
 
 cgOp o _ = error $ "Unsupported operation: " ++ show o
 
+newLabel :: String -> CilCodegen String
+newLabel prefix = do
+  suffix <- get
+  modify (+1)
+  return $ prefix ++ show suffix
+
 boxInteger :: MethodDecl
 boxInteger = box (ValueType "mscorlib" "System.Int32")
 
@@ -274,7 +282,7 @@ load (Loc i) = do
 
 localIndex :: Offset -> CilCodegen Offset
 localIndex i = do
-  (SFun _ ps _ _) <- get
+  (SFun _ ps _ _) <- ask
   return $ i - length ps
 
 entryPointName :: Name
