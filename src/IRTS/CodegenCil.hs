@@ -72,7 +72,7 @@ cil (SLet (Loc _) SNothing e) = cil e
 cil (SLet (Loc i) v e) = do
   cil v
   li <- localIndex i
-  tell [stloc li]
+  tell [ stloc li ]
   cil e
 
 cil (SV v) = load v
@@ -80,6 +80,7 @@ cil (SConst c) = cgConst c
 cil SNothing = tell [ldnull]
 cil (SOp op args) = cgOp op args
 
+-- Special constructors: True, False, List.Nil, List.::
 cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, box systemBoolean ]
 cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, box systemBoolean ]
 cil (SCon _ 0 n []) | n == listNil   = tell [ loadNil ]
@@ -87,7 +88,7 @@ cil (SCon _ 1 n [x, xs]) | n == listCons = do load x
                                               load xs
                                               tell [ castclass consTypeRef
                                                    , newobj "" "Cons" [Cil.Object, consTypeRef] ]
-
+-- General constructors
 cil (SCon _ t _ fs) = do
   tell [ ldc t
        , ldc $ length fs
@@ -99,9 +100,8 @@ cil (SCon _ t _ fs) = do
           tell [dup, ldc_i4 i]
           load f
           tell [stelem_ref]
-{-
-Prelude.Bool.ifThenElse
--}
+
+-- ifThenElse
 cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
                     , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue = do
   thenLabel <- newLabel "THEN"
@@ -115,6 +115,7 @@ cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
   cil thenAlt
   tell [ label endLabel ]
 
+-- List case matching
 cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
                     , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
 
@@ -179,9 +180,9 @@ ldc :: (Integral n) => n -> MethodDecl
 ldc = ldc_i4 . fromIntegral
 
 cgConst :: Const -> CilCodegen ()
-cgConst (Str s) = tell [ldstr s]
-cgConst (BI i) = tell [ ldc i
-                      , boxInteger ]
+cgConst (Str s) = tell [ ldstr s ]
+cgConst (BI i)  = tell [ ldc i
+                       , boxInteger ]
 {-
   = I Int
   | BI Integer
@@ -202,15 +203,16 @@ cgConst (BI i) = tell [ ldc i
 
 cgAlt :: LVar -> (Label, SAlt) -> CilCodegen ()
 cgAlt v (l, SConCase _ _ _ fs sexp) = do
-  tell [label l]
+  tell [ label l ]
   unless (null fs) $ do
     load v
     tell [ castclass sconTypeRef
          , ldfld array "" "SCon" "fields"
          ]
     mapM_ loadElement (zip [0..] fs)
-    tell [pop]
+    tell [ pop ]
   cil sexp
+  tell [ br "END" ]
   where loadElement :: (Int, Name) -> CilCodegen ()
         loadElement (e, MN i _) = tell [ dup
                                        , ldc e
@@ -222,9 +224,6 @@ cgAlt _ (l, e) = tell [ label l
                       , ldnull
                       , br "END"
                       ]
---cgAlt _ (l, e@(SConstCase t exp)) = tell [label l, comment (show e), ldnull, br "END"]
---cgAlt _ (l, e@(SDefaultCase exp)) = tell [label l, comment (show e), ldnull, br "END"]
-
 
 cgOp :: PrimFn -> [LVar] -> CilCodegen ()
 cgOp LWriteStr [_, s] = do
