@@ -140,6 +140,18 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
   tell [ label endLabel ]
   where bind (MN i _) = stloc i
 
+-- special handling for the common case of branching on 0
+cil (SCase Shared v [SConstCase (BI 0) thenAlt, SDefaultCase elseAlt]) = do
+  elseLabel <- newLabel "ELSE"
+  endLabel  <- newLabel "END"
+  loadInteger v
+  tell [ brtrue elseLabel ]
+  cil thenAlt
+  tell [ br endLabel
+       , label elseLabel ]
+  cil elseAlt
+  tell [ label endLabel ]
+
 cil e@(SCase Shared _ _) = tell [ comment $ "NOT IMPLEMENTED: " ++ show e
                                 , ldnull ]
 
@@ -237,10 +249,8 @@ cgOp LStrConcat args = do
   forM_ args loadString
   tell [ call [] String "mscorlib" "System.String" "Concat" (map (const String) args) ]
 
-cgOp (LPlus _) args = do
-  forM_ args loadInteger
-  tell [ add
-       , boxInteger ]
+cgOp (LPlus _)  args = integerOp add args
+cgOp (LMinus _) args = integerOp sub args
 
 cgOp (LIntStr _) [i] = do
   load i
@@ -253,6 +263,12 @@ newLabel prefix = do
   suffix <- get
   modify (+1)
   return $ prefix ++ show suffix
+
+integerOp :: MethodDecl -> [LVar] -> CilCodegen ()
+integerOp op args = do
+  forM_ args loadInteger
+  tell [ op
+       , boxInteger ]
 
 boxInteger :: MethodDecl
 boxInteger = box (ValueType "mscorlib" "System.Int32")
