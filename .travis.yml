@@ -6,8 +6,8 @@ before_install:
 - travis_retry sudo apt-get install --force-yes cabal-install-1.22 happy-1.19.3 alex-3.1.3
 - export PATH=/opt/alex/3.1.3/bin:/opt/happy/1.19.3/bin:/opt/cabal/1.22/bin:$PATH
 - mkdir vendor
-- git clone --depth 1 git@github.com:idris-lang/Idris-dev.git vendor/idris
-- git clone --depth 1 git@github.com:bamboo/language-cil.git --branch idris-cil --single-branch vendor/language-cil
+- git clone --depth 1 https://github.com/idris-lang/Idris-dev.git vendor/idris
+- git clone --depth 1 https://github.com/bamboo/language-cil.git --branch idris-cil --single-branch vendor/language-cil
 install:
 - cabal update
 - cabal install cabal-install
@@ -18,5 +18,6 @@ script:
 - cabal install --only-dependencies --enable-tests -j2
 - cabal configure --enable-tests
 - export PATH=$(pwd)/vendor/sandbox/bin:$PATH
+- cabal build
 - cabal test --show-details=always --test-options="--color"
 - cabal check
