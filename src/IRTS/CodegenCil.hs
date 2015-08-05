@@ -103,18 +103,16 @@ cil (SCon _ t _ fs) = do
 
 -- ifThenElse
 cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
-                    , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue = do
-  thenLabel <- newLabel "THEN"
-  endLabel  <- newLabel "END"
-  load v
-  tell [ unbox_any systemBoolean
-       , brtrue thenLabel ]
-  cil elseAlt
-  tell [ br endLabel
-       , label thenLabel ]
-  cil thenAlt
-  tell [ label endLabel ]
+                    , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue =
+  cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
+    tell [ unbox_any systemBoolean
+         , brtrue thenLabel ]
 
+cil (SCase Shared v [ SConstCase c thenAlt, SDefaultCase elseAlt ]) =
+  cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
+    cgBranchEq c thenLabel
+
+-- SCase Shared (Loc 0) [SConstCase 0 (SCon Nothing 0 Prelude.Bool.False []),SDefaultCase (SCon Nothing 1 Prelude.Bool.True [])]
 -- List case matching
 cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
                     , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
@@ -139,18 +137,6 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
   cil nilAlt
   tell [ label endLabel ]
   where bind (MN i _) = stloc i
-
--- special handling for the common case of branching on 0
-cil (SCase Shared v [SConstCase (BI 0) thenAlt, SDefaultCase elseAlt]) = do
-  elseLabel <- newLabel "ELSE"
-  endLabel  <- newLabel "END"
-  loadInteger v
-  tell [ brtrue elseLabel ]
-  cil thenAlt
-  tell [ br endLabel
-       , label elseLabel ]
-  cil elseAlt
-  tell [ label endLabel ]
 
 cil e@(SCase Shared _ _) = tell [ comment $ "NOT IMPLEMENTED: " ++ show e
                                 , ldnull ]
@@ -181,9 +167,19 @@ cil (SApp isTailCall n args) = do
     else tell [ app ]
   where app = call [] Cil.Object "" "M" (defName n) (map (const Cil.Object) args)
 
-cil e = do
-  decl <- get
-  error $ "Unsupported expression `" ++ show e ++ "' in\n" ++ show decl
+cil e = unsupported "expression" e
+
+cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen ()
+cgIfThenElse v thenAlt elseAlt cgBranch = do
+  thenLabel <- newLabel "THEN"
+  endLabel  <- newLabel "END"
+  load v
+  cgBranch thenLabel
+  cil elseAlt
+  tell [ br endLabel
+       , label thenLabel ]
+  cil thenAlt
+  tell [ label endLabel ]
 
 systemBoolean :: PrimitiveType
 systemBoolean = ValueType "mscorlib" "System.Boolean"
@@ -193,8 +189,10 @@ ldc = ldc_i4 . fromIntegral
 
 cgConst :: Const -> CilCodegen ()
 cgConst (Str s) = tell [ ldstr s ]
+cgConst (I i)   = cgConst . BI . fromIntegral $ i
 cgConst (BI i)  = tell [ ldc i
                        , boxInteger ]
+cgConst c = unsupported "const" c
 {-
   = I Int
   | BI Integer
@@ -212,6 +210,14 @@ cgConst (BI i)  = tell [ ldc i
   | VoidType
   | Forgot
 -}
+
+cgBranchEq :: Const -> String -> CilCodegen ()
+cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
+cgBranchEq (I i) target =
+  tell [ unbox_any Int32
+       , ldc i
+       , beq target ]
+cgBranchEq c _ = unsupported "branch on const" c
 
 cgAlt :: LVar -> (Label, SAlt) -> CilCodegen ()
 cgAlt v (l, SConCase _ _ _ fs sexp) = do
@@ -251,12 +257,18 @@ cgOp LStrConcat args = do
 
 cgOp (LPlus _)  args = integerOp add args
 cgOp (LMinus _) args = integerOp sub args
+cgOp (LEq (ATInt ITNative)) args = integerOp ceq args
 
 cgOp (LIntStr _) [i] = do
   load i
   tell [ callvirt String "mscorlib" "System.Object" "ToString" [] ]
 
-cgOp o _ = error $ "Unsupported operation: " ++ show o
+cgOp o _ = unsupported "operation" o
+
+unsupported :: Show a => String -> a -> CilCodegen b
+unsupported desc v = do
+  decl <- ask
+  error $ "Unsupported " ++ desc ++ " `" ++ show v ++ "' in\n" ++ show decl
 
 newLabel :: String -> CilCodegen String
 newLabel prefix = do
