@@ -144,6 +144,11 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
   tell [ label endLabel ]
   where bind (MN i _) = stloc i
 
+-- cil (SCase Shared v alts) = cil (SChkCase v (sortedAlts ++ [SDefaultCase SNothing]))
+--   where sortedAlts = sortBy (compare `on` tag) alts
+--         tag (SConCase _ t _ _ _) = t
+--         tag c                    = error $ show c
+
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) | canBuildJumpTable alts = do
   load v
@@ -262,34 +267,34 @@ cgOp LStrCons [h, t] = do
 
 cgOp LStrEq args = do
   forM_ args loadString
-  tell [ call [] Int32 "mscorlib" "System.String" "CompareOrdinal" (map (const String) args)
-       , box Int32 ]
+  tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (map (const String) args)
+       , box systemInt32 ] -- strange but correct
 
-cgOp LStrHead [v] = do
-  loadString v
-  tell [ ldc_i4 0
-       , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]
-       , box systemChar ]
+-- cgOp LStrHead [v] = do
+--   loadString v
+--   tell [ ldc_i4 0
+--        , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]
+--        , box systemChar ]
 
-cgOp LStrTail [v] = do
-  loadString v
-  tell [ ldc_i4 1
-       , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
+-- cgOp LStrTail [v] = do
+--   loadString v
+--   tell [ ldc_i4 1
+--        , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
 
-cgOp (LChInt ITNative) [c] = do
-  load c
-  tell [ unbox_any systemChar
-       , boxInt32 ]
+-- cgOp (LChInt ITNative) [c] = do
+--   load c
+--   tell [ unbox_any systemChar
+--        , box systemInt32 ]
 
-cgOp (LEq (ATInt ITChar)) args = do
-  forM_ args loadChar
-  tell [ ceq
-       , boxInt32 ]
+-- cgOp (LEq (ATInt ITChar)) args = do
+--   forM_ args loadChar
+--   tell [ ceq
+--        , box systemBoolean ]
 
-cgOp (LSLt (ATInt ITChar)) args = do
-  forM_ args loadChar
-  tell [ clt
-       , boxInt32 ]
+-- cgOp (LSLt (ATInt ITChar)) args = do
+--   forM_ args loadChar
+--   tell [ clt
+--        , box systemBoolean ]
 
 cgOp (LPlus _)  args = integerOp add args
 cgOp (LMinus _) args = integerOp sub args
