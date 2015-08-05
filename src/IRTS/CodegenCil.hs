@@ -38,6 +38,10 @@ moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods
         declsWithBody = filter hasBody decls
         decls         = map snd $ simpleDecls ci
         hasBody (SFun _ _ _ sexp) = someSExp sexp
+        someSExp :: SExp -> Bool
+        someSExp SNothing              = False
+        someSExp (SOp (LExternal _) _) = False
+        someSExp _                     = True
 
 moduleName :: String
 moduleName = "'λΠ'"
@@ -81,7 +85,7 @@ cil (SUpdate (Loc i) v) = do
        , stloc li ]
 
 cil (SConst c) = cgConst c
-cil SNothing = tell [ldnull]
+cil SNothing = tell [ ldnull ]
 cil (SOp op args) = cgOp op args
 
 -- Special constructors: True, False, List.Nil, List.::
@@ -96,14 +100,14 @@ cil (SCon _ 1 n [x, xs]) | n == listCons = do load x
 cil (SCon _ t _ fs) = do
   tell [ ldc t
        , ldc $ length fs
-       , newarr Cil.Object
-       ]
+       , newarr Cil.Object ]
   mapM_ storeElement (zip [0..] fs)
-  tell [newobj "" "SCon" [Int32, array]]
+  tell [ newobj "" "SCon" [Int32, array] ]
   where storeElement (i, f) = do
-          tell [dup, ldc_i4 i]
+          tell [ dup
+               , ldc_i4 i ]
           load f
-          tell [stelem_ref]
+          tell [ stelem_ref ]
 
 -- ifThenElse
 cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
@@ -116,7 +120,6 @@ cil (SCase Shared v [ SConstCase c thenAlt, SDefaultCase elseAlt ]) =
   cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
     cgBranchEq c thenLabel
 
--- SCase Shared (Loc 0) [SConstCase 0 (SCon Nothing 0 Prelude.Bool.False []),SDefaultCase (SCon Nothing 1 Prelude.Bool.True [])]
 -- List case matching
 cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
                     , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
@@ -133,8 +136,7 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
        , ldfld Cil.Object "" "Cons" "car"
        , bind x
        , ldfld consTypeRef "" "Cons" "cdr"
-       , bind xs
-       ]
+       , bind xs ]
   cil consAlt
   tell [ br endLabel
        , label nilLabel ]
@@ -152,8 +154,7 @@ cil (SChkCase v alts) | canBuildJumpTable alts = do
        , ldfld Int32 "" "SCon" "tag"
        , ldc baseTag
        , sub
-       , switch labels
-       ]
+       , switch labels ]
   mapM_ (cgAlt v) (zip labels alts)
   tell [ label "END" ]
   where canBuildJumpTable (SConCase _ t _ _ _ : xs) = canBuildJumpTable' t xs
@@ -185,18 +186,12 @@ cgIfThenElse v thenAlt elseAlt cgBranch = do
   cil thenAlt
   tell [ label endLabel ]
 
-systemBoolean, systemChar :: PrimitiveType
-systemBoolean = ValueType "mscorlib" "System.Boolean"
-systemChar = ValueType "mscorlib" "System.Char"
-
-ldc :: (Integral n) => n -> MethodDecl
-ldc = ldc_i4 . fromIntegral
 
 cgConst :: Const -> CilCodegen ()
 cgConst (Str s) = tell [ ldstr s ]
 cgConst (I i)   = cgConst . BI . fromIntegral $ i
 cgConst (BI i)  = tell [ ldc i
-                       , boxInteger ]
+                       , boxInt32 ]
 cgConst (Ch c)  = tell [ ldc $ ord c
                        , box systemChar ]
 cgConst c = unsupported "const" c
@@ -236,8 +231,7 @@ cgAlt v (l, SConCase _ _ _ fs sexp) = do
   unless (null fs) $ do
     load v
     tell [ castclass sconTypeRef
-         , ldfld array "" "SCon" "fields"
-         ]
+         , ldfld array "" "SCon" "fields" ]
     mapM_ loadElement (zip [0..] fs)
     tell [ pop ]
   cil sexp
@@ -259,8 +253,7 @@ cgOp LWriteStr [_, s] = do
   load s
   tell [ castclass String
        , call [] Void "mscorlib" "System.Console" "Write" [String]
-       , ldnull
-       ]
+       , ldnull ]
 
 cgOp LStrConcat args = do
   forM_ args loadString
@@ -291,17 +284,17 @@ cgOp LStrTail [v] = do
 cgOp (LChInt ITNative) [c] = do
   load c
   tell [ unbox_any systemChar
-       , boxInteger ]
+       , boxInt32 ]
 
 cgOp (LEq (ATInt ITChar)) args = do
   forM_ args loadChar
   tell [ ceq
-       , boxInteger ]
+       , boxInt32 ]
 
 cgOp (LSLt (ATInt ITChar)) args = do
   forM_ args loadChar
   tell [ clt
-       , boxInteger ]
+       , boxInt32 ]
 
 cgOp (LPlus _)  args = integerOp add args
 cgOp (LMinus _) args = integerOp sub args
@@ -328,16 +321,16 @@ newLabel prefix = do
 
 integerOp :: MethodDecl -> [LVar] -> CilCodegen ()
 integerOp op args = do
-  forM_ args loadInteger
+  forM_ args loadInt32
   tell [ op
-       , boxInteger ]
+       , boxInt32 ]
 
-boxInteger :: MethodDecl
-boxInteger = box integerType
+boxInt32 :: MethodDecl
+boxInt32 = box systemInt32
 
-loadInteger, loadChar :: LVar -> CilCodegen ()
-loadInteger = loadAs integerType
-loadChar    = loadAs systemChar
+loadInt32, loadChar :: LVar -> CilCodegen ()
+loadInt32 = loadAs systemInt32
+loadChar  = loadAs systemChar
 
 loadAs :: PrimitiveType -> LVar -> CilCodegen ()
 loadAs valueType l = do
@@ -352,14 +345,16 @@ loadString l = do
 loadNil :: MethodDecl
 loadNil = ldsfld consTypeRef "" "Cons" "Nil"
 
+ldc :: (Integral n) => n -> MethodDecl
+ldc = ldc_i4 . fromIntegral
+
 load :: LVar -> CilCodegen ()
 load (Loc i) = do
   li <- localIndex i
   tell [
     if li < 0
       then ldarg i
-      else ldloc li
-    ]
+      else ldloc li ]
 
 localIndex :: Offset -> CilCodegen Offset
 localIndex i = do
@@ -367,29 +362,9 @@ localIndex i = do
   return $ i - length ps
 
 entryPointName :: Name
---entryPointName = NS (UN "main") ["Main"]
 entryPointName = MN 0 "runMain"
+--entryPointName = NS (UN "main") ["Main"]
 
-someSExp :: SExp -> Bool
-someSExp SNothing              = False
-someSExp (SOp (LExternal _) _) = False
-someSExp _                     = True
-
--- | Turns an arbitrary name into a valid CIL name.
--- |
--- | http://www.unicode.org/reports/tr15/tr15-18.html#Programming Language Identifiers
--- | <identifier> ::= <identifier_start> ( <identifier_start> | <identifier_extend> )*
--- | <identifier_start> ::= [{Lu}{Ll}{Lt}{Lm}{Lo}{Nl}]
--- | <identifier_extend> ::= [{Mn}{Mc}{Nd}{Pc}{Cf}]
--- |
--- | That is, the first character of an identifier can be an uppercase
--- | letter, lowercase letter, titlecase letter, modifier letter, other
--- | letter, or letter number. The subsequent characters of an
--- | identifier can be any of those, plus non-spacing marks, spacing
--- | combining marks, decimal numbers, connector punctuations, and
--- | formatting codes (such as right-left-mark). Normally the formatting
--- | codes should be filtered out before storing or comparing
--- | identifiers.
 cilName :: Name -> String
 cilName = quoted . T.unpack . showName
   where showName (NS n ns) = T.intercalate "." . reverse $ showName n : ns
@@ -408,8 +383,7 @@ consType = classDef [CaPrivate] className noExtends noImplements
                       , ldnull
                       , newobj "" className [Cil.Object, consTypeRef]
                       , stsfld consTypeRef "" className "Nil"
-                      , ret
-                      ]
+                      , ret ]
         car       = Field [FaPublic] Cil.Object "car"
         cdr       = Field [FaPublic] consTypeRef "cdr"
         ctor      = Constructor [MaPublic] Void [ Param Nothing Cil.Object "car"
@@ -422,8 +396,7 @@ consType = classDef [CaPrivate] className noExtends noImplements
                       , ldarg 0
                       , ldarg 2
                       , stfld consTypeRef "" className "cdr"
-                      , ret
-                      ]
+                      , ret ]
 
 sconType :: TypeDef
 sconType = classDef [CaPrivate] className noExtends noImplements
@@ -441,34 +414,30 @@ sconType = classDef [CaPrivate] className noExtends noImplements
                      , ldarg 0
                      , ldarg 2
                      , stfld array "" className "fields"
-                     , ret
-                     ]
+                     , ret ]
 
 consTypeRef, sconTypeRef :: PrimitiveType
 consTypeRef = ReferenceType "" "Cons"
 sconTypeRef = ReferenceType "" "SCon"
 
-array :: PrimitiveType
-array = Array Cil.Object
-
-integerType :: PrimitiveType
-integerType = ValueType "mscorlib" "System.Int32"
-
-consoleWriteLine :: String -> DList MethodDecl
-consoleWriteLine s = [ ldstr s
-                     , call [] Void "mscorlib" "System.Console" "WriteLine" [String]
-                     ]
+systemBoolean, systemChar, systemInt32, array :: PrimitiveType
+systemBoolean = ValueType "mscorlib" "System.Boolean"
+systemChar    = ValueType "mscorlib" "System.Char"
+systemInt32   = ValueType "mscorlib" "System.Int32"
+array          = Array Cil.Object
 
 boolFalse, boolTrue, listNil, listCons :: Name
-
 boolFalse = NS (UN "False") ["Bool", "Prelude"]
-boolTrue  = NS (UN "True") ["Bool", "Prelude"]
-
-listNil  = NS (UN "Nil") ["List", "Prelude"]
-listCons = NS (UN "::")  ["List", "Prelude"]
+boolTrue  = NS (UN "True")  ["Bool", "Prelude"]
+listNil   = NS (UN "Nil")   ["List", "Prelude"]
+listCons  = NS (UN "::")    ["List", "Prelude"]
 
 quoted :: String -> String
 quoted n = "'" ++ concatMap validChar n ++ "'"
   where validChar c = if c == '\''
                          then "\\'"
                          else [c]
+
+consoleWriteLine :: String -> DList MethodDecl
+consoleWriteLine s = [ ldstr s
+                     , call [] Void "mscorlib" "System.Console" "WriteLine" [String] ]
