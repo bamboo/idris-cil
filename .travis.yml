@@ -23,4 +23,4 @@ script:
 - cd vendor/idris && make && make install
 - cd ../..
 - cabal install --only-dependencies --enable-tests -j2 && cabal configure --enable-tests
-- cabal build && cabal test --show-details=always --test-options="--color" && cabal check
+- cabal build && cabal test --show-details=always --test-options="--color"
