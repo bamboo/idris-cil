@@ -2,7 +2,7 @@ module IRTS.CodegenCilSpec where
 
 import           Control.Applicative ((<$>))
 import           Control.Arrow ((>>>))
-import           Control.Monad (forM_, when)
+import           Control.Monad (forM_)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT)
 import           Control.Monad.Trans.State.Strict (StateT, evalStateT)
 
@@ -56,7 +56,7 @@ exec input = do
   where output = replaceExtension input "exe"
 
 compileToBytecode :: [FilePath] -> IO ()
-compileToBytecode files = readProcess "idris" (options ++ files) "" >>= putStrLn
+compileToBytecode files = traceProcess "idris" (options ++ files)
   where options = ["--typeintype", "--check", "--quiet"]
 
 evalIdris :: Monad m => IState -> StateT IState (ExceptT e m) a -> m (Either e a)
@@ -79,8 +79,11 @@ mono :: String -> IO String
 mono exe = readProcess "mono" [exe] ""
 
 peverify :: String -> IO ()
-peverify exe = do
-  (code, stdout, stderr) <- readProcessWithExitCode "peverify" [exe] ""
+peverify exe = traceProcess "peverify" [exe]
+
+traceProcess :: String -> [String] -> IO ()
+traceProcess exe args = do
+  (code, stdout, stderr) <- readProcessWithExitCode exe args ""
   case code of
-    ExitFailure _ -> error $ "peverify error: " ++ stdout ++ stderr
+    ExitFailure _ -> error $ exe ++ " error: " ++ stdout ++ stderr
     _             -> return ()
