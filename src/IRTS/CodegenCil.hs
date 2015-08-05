@@ -144,9 +144,6 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
   tell [ label endLabel ]
   where bind (MN i _) = stloc i
 
-cil e@(SCase Shared _ _) = tell [ comment $ "NOT IMPLEMENTED: " ++ show e
-                                , ldnull ]
-
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) | canBuildJumpTable alts = do
   load v
@@ -240,13 +237,11 @@ cgAlt v (l, SConCase _ _ _ fs sexp) = do
         loadElement (e, MN i _) = tell [ dup
                                        , ldc e
                                        , ldelem_ref
-                                       , stloc i
-                                       ]
-cgAlt _ (l, e) = tell [ label l
-                      , comment $ "NOT IMPLEMENTED: " ++ show e
-                      , ldnull
-                      , br "END"
-                      ]
+                                       , stloc i ]
+cgAlt _ (l, e) = do
+  tell [ label l ]
+  unsupported "case" e
+  tell [ br "END" ]
 
 cgOp :: PrimFn -> [LVar] -> CilCodegen ()
 cgOp LWriteStr [_, s] = do
@@ -308,10 +303,12 @@ cgOp (LIntStr _) [i] = do
 
 cgOp o _ = unsupported "operation" o
 
-unsupported :: Show a => String -> a -> CilCodegen b
+unsupported :: Show a => String -> a -> CilCodegen ()
 unsupported desc v = do
   decl <- ask
-  error $ "Unsupported " ++ desc ++ " `" ++ show v ++ "' in\n" ++ show decl
+  tell [ ldstr $ "Unsupported " ++ desc ++ " `" ++ show v ++ "' in\n" ++ show decl
+       , newobj "mscorlib" "System.Exception" [String]
+       , throw ]
 
 newLabel :: String -> CilCodegen String
 newLabel prefix = do
