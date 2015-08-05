@@ -32,21 +32,18 @@ assemblyFor :: CodegenInfo -> Assembly
 assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, consType]
   where asmName  = quoted $ takeBaseName (outputFile ci)
 
-quoted :: String -> String
-quoted n = "'" ++ concatMap validChar n ++ "'"
-  where validChar c = if c == '\''
-                         then "\\'"
-                         else [c]
-
 moduleFor :: CodegenInfo -> TypeDef
-moduleFor ci = classDef [CaPrivate] "M" noExtends noImplements [] methods []
+moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods []
   where methods       = map method declsWithBody
         declsWithBody = filter hasBody decls
         decls         = map snd $ simpleDecls ci
         hasBody (SFun _ _ _ sexp) = someSExp sexp
 
+moduleName :: String
+moduleName = "'λΠ'"
+
 method :: SDecl -> MethodDef
-method decl@(SFun name ps lc sexp) = Method attrs retType (defName name) parameters body
+method decl@(SFun name ps lc sexp) = Method attrs retType (cilName name) parameters body
   where attrs      = [MaStatic, MaAssembly]
         retType    = Cil.Object
         parameters = map param ps
@@ -172,7 +169,7 @@ cil (SApp isTailCall n args) = do
   if isTailCall
     then tell [ tailcall app, ret, ldnull ]
     else tell [ app ]
-  where app = call [] Cil.Object "" "M" (defName n) (map (const Cil.Object) args)
+  where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
 cil e = unsupported "expression" e
 
@@ -394,14 +391,12 @@ someSExp _                     = True
 -- | codes should be filtered out before storing or comparing
 -- | identifiers.
 cilName :: Name -> String
-cilName (UN t)   = quoted $ T.unpack t
-cilName (MN i t) = quoted $ T.unpack t ++ show i
-cilName (SN sn)  = quoted $ show sn
-cilName e = error $ "Unsupported name `" ++ show e ++ "'"
-
-defName :: Name -> MethodName
-defName (NS n _) = cilName n
-defName n = cilName n
+cilName = quoted . T.unpack . showName
+  where showName (NS n ns) = T.intercalate "." . reverse $ showName n : ns
+        showName (UN t)    = t
+        showName (MN i t)  = T.concat [t, T.pack $ show i]
+        showName (SN sn)   = T.pack $ show sn
+        showName e = error $ "Unsupported name `" ++ show e ++ "'"
 
 consType :: TypeDef
 consType = classDef [CaPrivate] className noExtends noImplements
@@ -471,3 +466,9 @@ boolTrue  = NS (UN "True") ["Bool", "Prelude"]
 
 listNil  = NS (UN "Nil") ["List", "Prelude"]
 listCons = NS (UN "::")  ["List", "Prelude"]
+
+quoted :: String -> String
+quoted n = "'" ++ concatMap validChar n ++ "'"
+  where validChar c = if c == '\''
+                         then "\\'"
+                         else [c]
