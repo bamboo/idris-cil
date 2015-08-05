@@ -97,7 +97,7 @@ cil (SCon _ 1 n [x, xs]) | n == listCons = do load x
                                               tell [ castclass consTypeRef
                                                    , newobj "" "Cons" [Cil.Object, consTypeRef] ]
 -- General constructors
-cil (SCon _ t _ fs) = do
+cil (SCon Nothing t _ fs) = do
   tell [ ldc t
        , ldc $ length fs
        , newarr Cil.Object ]
