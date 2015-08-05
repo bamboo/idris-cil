@@ -46,7 +46,5 @@ idris --codegen cil Main.idr -o HelloWorld.il \
 ## Command Line Options
 
 ```
-idris-cil [.ibc] -o <dir|file.il|file.dll|file.exe>
+idris-cil [.ibc] -o <output.(il|exe|dll)>
 ```
-
-Only the `file.il` option is supported at this moment.
