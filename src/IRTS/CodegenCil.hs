@@ -2,6 +2,7 @@
 module IRTS.CodegenCil where
 
 import           Control.Monad.RWS.Strict hiding (local)
+import           Data.Char (ord)
 import           Data.DList (DList, fromList, toList, append)
 import qualified Data.Text as T
 import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
@@ -76,6 +77,12 @@ cil (SLet (Loc i) v e) = do
   cil e
 
 cil (SV v) = load v
+cil (SUpdate (Loc i) v) = do
+  li <- localIndex i
+  cil v
+  tell [ dup
+       , stloc li ]
+
 cil (SConst c) = cgConst c
 cil SNothing = tell [ldnull]
 cil (SOp op args) = cgOp op args
@@ -181,8 +188,9 @@ cgIfThenElse v thenAlt elseAlt cgBranch = do
   cil thenAlt
   tell [ label endLabel ]
 
-systemBoolean :: PrimitiveType
+systemBoolean, systemChar :: PrimitiveType
 systemBoolean = ValueType "mscorlib" "System.Boolean"
+systemChar = ValueType "mscorlib" "System.Char"
 
 ldc :: (Integral n) => n -> MethodDecl
 ldc = ldc_i4 . fromIntegral
@@ -192,6 +200,8 @@ cgConst (Str s) = tell [ ldstr s ]
 cgConst (I i)   = cgConst . BI . fromIntegral $ i
 cgConst (BI i)  = tell [ ldc i
                        , boxInteger ]
+cgConst (Ch c)  = tell [ ldc $ ord c
+                       , box systemChar ]
 cgConst c = unsupported "const" c
 {-
   = I Int
@@ -212,6 +222,10 @@ cgConst c = unsupported "const" c
 -}
 
 cgBranchEq :: Const -> String -> CilCodegen ()
+cgBranchEq (Ch c) target =
+  tell [ unbox_any systemChar
+       , ldc $ ord c
+       , beq target ]
 cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
 cgBranchEq (I i) target =
   tell [ unbox_any Int32
@@ -255,9 +269,48 @@ cgOp LStrConcat args = do
   forM_ args loadString
   tell [ call [] String "mscorlib" "System.String" "Concat" (map (const String) args) ]
 
+cgOp LStrCons [h, t] = do
+  loadAs systemChar h
+  tell [ call [] String "mscorlib" "System.Char" "ToString" [Char] ]
+  loadString t
+  tell [ call [] String "mscorlib" "System.String" "Concat" [String, String] ]
+
+cgOp LStrEq args = do
+  forM_ args loadString
+  tell [ call [] Int32 "mscorlib" "System.String" "CompareOrdinal" (map (const String) args)
+       , box Int32 ]
+
+cgOp LStrHead [v] = do
+  loadString v
+  tell [ ldc_i4 0
+       , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]
+       , box systemChar ]
+
+cgOp LStrTail [v] = do
+  loadString v
+  tell [ ldc_i4 1
+       , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
+
+cgOp (LChInt ITNative) [c] = do
+  load c
+  tell [ unbox_any systemChar
+       , boxInteger ]
+
+cgOp (LEq (ATInt ITChar)) args = do
+  forM_ args loadChar
+  tell [ ceq
+       , boxInteger ]
+
+cgOp (LSLt (ATInt ITChar)) args = do
+  forM_ args loadChar
+  tell [ clt
+       , boxInteger ]
+
 cgOp (LPlus _)  args = integerOp add args
 cgOp (LMinus _) args = integerOp sub args
 cgOp (LEq (ATInt ITNative)) args = integerOp ceq args
+cgOp (LSExt ITNative ITBig) [i] = load i
+cgOp (LSLt (ATInt ITNative)) args = integerOp clt args
 
 cgOp (LIntStr _) [i] = do
   load i
@@ -283,12 +336,16 @@ integerOp op args = do
        , boxInteger ]
 
 boxInteger :: MethodDecl
-boxInteger = box (ValueType "mscorlib" "System.Int32")
+boxInteger = box integerType
 
-loadInteger :: LVar -> CilCodegen ()
-loadInteger l = do
+loadInteger, loadChar :: LVar -> CilCodegen ()
+loadInteger = loadAs integerType
+loadChar    = loadAs systemChar
+
+loadAs :: PrimitiveType -> LVar -> CilCodegen ()
+loadAs valueType l = do
   load l
-  tell [ unbox_any integerType ]
+  tell [ unbox_any valueType ]
 
 loadString :: LVar -> CilCodegen ()
 loadString l = do
