@@ -85,7 +85,7 @@ cil (SUpdate (Loc i) v) = do
        , stloc li ]
 
 cil (SConst c) = cgConst c
-cil SNothing = tell [ ldnull ]
+cil SNothing = throwException "SNothing"
 cil (SOp op args) = cgOp op args
 
 -- Special constructors: True, False, List.Nil, List.::
@@ -306,7 +306,11 @@ cgOp o _ = unsupported "operation" o
 unsupported :: Show a => String -> a -> CilCodegen ()
 unsupported desc v = do
   decl <- ask
-  tell [ ldstr $ "Unsupported " ++ desc ++ " `" ++ show v ++ "' in\n" ++ show decl
+  throwException $ "Unsupported " ++ desc ++ " `" ++ show v ++ "' in\n" ++ show decl
+
+throwException :: String -> CilCodegen ()
+throwException message =
+  tell [ ldstr message
        , newobj "mscorlib" "System.Exception" [String]
        , throw ]
 
