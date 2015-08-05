@@ -79,7 +79,7 @@ mono :: String -> IO String
 mono exe = readProcess "mono" [exe] ""
 
 peverify :: String -> IO ()
-peverify exe = traceProcess "peverify" [exe]
+peverify exe = traceProcess "pedump" ["--verify", " metadata,code", exe]
 
 traceProcess :: String -> [String] -> IO ()
 traceProcess exe args = do
