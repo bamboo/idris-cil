@@ -18,6 +18,7 @@ library
   ghc-options:      -rtsopts -funbox-strict-fields
   hs-source-dirs:   src
   exposed-modules:  IRTS.CodegenCil
+                  , IRTS.Cil.UnreachableCodeRemoval
   build-depends:    base >= 4.7 && <5
                   , containers
                   , directory

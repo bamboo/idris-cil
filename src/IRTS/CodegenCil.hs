@@ -17,6 +17,8 @@ import           Idris.Core.TT
 import           Language.Cil
 import qualified Language.Cil as Cil
 
+import           IRTS.Cil.UnreachableCodeRemoval
+
 codegenCil :: CodeGenerator
 codegenCil ci = do writeFile cilFile $ pr (assemblyFor ci) ""
                    when (outputExtension /= ".il") $
@@ -34,7 +36,7 @@ assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, consTyp
 
 moduleFor :: CodegenInfo -> TypeDef
 moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods []
-  where methods       = map method declsWithBody
+  where methods       = removeUnreachable $ map method declsWithBody
         declsWithBody = filter hasBody decls
         decls         = map snd $ simpleDecls ci
         hasBody (SFun _ _ _ sexp) = someSExp sexp
