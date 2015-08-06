@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, OverloadedLists #-}
+{-# LANGUAGE RecordWildCards, OverloadedStrings, OverloadedLists #-}
 module IRTS.CodegenCil where
 
 import           Control.Monad.RWS.Strict hiding (local)
@@ -47,43 +47,45 @@ moduleName :: String
 moduleName = "'λΠ'"
 
 method :: SDecl -> MethodDef
-method decl@(SFun name ps lc sexp) = Method attrs retType (cilName name) parameters body
+method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) parameters (toList body)
   where attrs      = [MaStatic, MaAssembly]
         retType    = Cil.Object
         parameters = map param ps
         param n    = Param Nothing Cil.Object (cilName n)
-        body       = toList $
-                      --append (consoleWriteLine (show name)) $ -- trace execution
-                       if isEntryPoint
-                         then append (append [entryPoint] cilForSexp)
-                                     [ret]
-                         else append cilForSexp
-                                     [ret]
-        cilForSexp = append locals (cilFor decl sexp)
-        locals     = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
+        body       = let (CodegenState _ lc, cilForSexp) = cilFor decl sexp
+                     in fromList [entryPoint | isEntryPoint]
+                       `append` locals lc
+                       `append` cilForSexp
+                       `append` [ret]
+        locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
         local i    = Local Cil.Object ("l" ++ show i)
         isEntryPoint = name == entryPointName
 
-type CilCodegen a = RWS SDecl (DList MethodDecl) Int a
 
-cilFor :: SDecl -> SExp -> DList MethodDecl
-cilFor decl sexp = snd $ evalRWS (cil sexp) decl 0
+data CodegenState = CodegenState { nextLabel  :: Int
+                                 , localCount :: Int }
+
+type CilCodegen a = RWS SDecl (DList MethodDecl) CodegenState a
+
+cilFor :: SDecl -> SExp -> (CodegenState, DList MethodDecl)
+cilFor decl sexp = execRWS (cil sexp) decl (CodegenState 0 0)
 
 cil :: SExp -> CilCodegen ()
-cil (SLet (Loc _) SNothing e) = cil e
 cil (SLet (Loc i) v e) = do
-  cil v
+  case v of
+    SNothing -> tell [ ldnull ]
+    _        -> cil v
   li <- localIndex i
-  tell [ stloc li ]
+  storeLocal li
   cil e
 
-cil (SV v) = load v
 cil (SUpdate (Loc i) v) = do
-  li <- localIndex i
   cil v
-  tell [ dup
-       , stloc li ]
+  tell [ dup ]
+  li <- localIndex i
+  storeLocal li
 
+cil (SV v) = load v
 cil (SConst c) = cgConst c
 cil SNothing = throwException "SNothing"
 cil (SOp op args) = cgOp op args
@@ -133,16 +135,17 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
   load v
   tell [ castclass consTypeRef
        , dup
-       , ldfld Cil.Object "" "Cons" "car"
-       , bind x
-       , ldfld consTypeRef "" "Cons" "cdr"
-       , bind xs ]
+       , ldfld Cil.Object "" "Cons" "car" ]
+  bind x
+  tell [ ldfld consTypeRef "" "Cons" "cdr" ]
+  bind xs
   cil consAlt
   tell [ br endLabel
        , label nilLabel ]
   cil nilAlt
   tell [ label endLabel ]
-  where bind (MN i _) = stloc i
+  where bind (MN i _) = storeLocal i
+
 
 -- cil (SCase Shared v alts) = cil (SChkCase v (sortedAlts ++ [SDefaultCase SNothing]))
 --   where sortedAlts = sortBy (compare `on` tag) alts
@@ -188,7 +191,6 @@ cgIfThenElse v thenAlt elseAlt cgBranch = do
   cil thenAlt
   tell [ label endLabel ]
 
-
 cgConst :: Const -> CilCodegen ()
 cgConst (Str s) = tell [ ldstr s ]
 cgConst (I i)   = cgConst . BI . fromIntegral $ i
@@ -214,6 +216,12 @@ cgConst c = unsupported "const" c
   | VoidType
   | Forgot
 -}
+
+storeLocal :: Int -> CilCodegen ()
+storeLocal i = do
+  tell [ stloc i ]
+  modify ensureLocal
+  where ensureLocal CodegenState{..} = CodegenState nextLabel (max localCount (i + 1))
 
 cgBranchEq :: Const -> String -> CilCodegen ()
 cgBranchEq (Ch c) target =
@@ -321,8 +329,8 @@ throwException message =
 
 newLabel :: String -> CilCodegen String
 newLabel prefix = do
-  suffix <- get
-  modify (+1)
+  (CodegenState suffix locals) <- get
+  put (CodegenState (suffix + 1) locals)
   return $ prefix ++ show suffix
 
 integerOp :: MethodDecl -> [LVar] -> CilCodegen ()
