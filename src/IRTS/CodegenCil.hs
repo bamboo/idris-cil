@@ -118,6 +118,12 @@ cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
     tell [ unbox_any systemBoolean
          , brtrue thenLabel ]
 
+cil (SCase Shared v [ SConCase _ c _ [] thenAlt, SDefaultCase elseAlt ]) =
+  cgIfThenElse v thenAlt elseAlt $ \thenLabel -> do
+    loadSConTag
+    tell [ ldc c
+         , beq thenLabel ]
+
 cil (SCase Shared v [ SConstCase c thenAlt, SDefaultCase elseAlt ]) =
   cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
     cgBranchEq c thenLabel
@@ -146,6 +152,7 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
   tell [ label endLabel ]
   where bind (MN i _) = storeLocal i
 
+cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
 
 -- cil (SCase Shared v alts) = cil (SChkCase v (sortedAlts ++ [SDefaultCase SNothing]))
 --   where sortedAlts = sortBy (compare `on` tag) alts
@@ -155,9 +162,8 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) | canBuildJumpTable alts = do
   load v
-  tell [ castclass (ReferenceType "" "SCon")
-       , ldfld Int32 "" "SCon" "tag"
-       , ldc baseTag
+  loadSConTag
+  tell [ ldc baseTag
        , sub
        , switch labels ]
   mapM_ (cgAlt v) (zip labels alts)
@@ -178,6 +184,10 @@ cil (SApp isTailCall n args) = do
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
 cil e = unsupported "expression" e
+
+loadSConTag :: CilCodegen ()
+loadSConTag = tell [ castclass (ReferenceType "" "SCon")
+                   , ldfld Int32 "" "SCon" "tag" ]
 
 cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen ()
 cgIfThenElse v thenAlt elseAlt cgBranch = do
@@ -235,9 +245,8 @@ cgBranchEq (I i) target =
        , beq target ]
 cgBranchEq c _ = unsupported "branch on const" c
 
-cgAlt :: LVar -> (Label, SAlt) -> CilCodegen ()
-cgAlt v (l, SConCase _ _ _ fs sexp) = do
-  tell [ label l ]
+cgSConCase :: LVar -> SAlt -> CilCodegen ()
+cgSConCase v (SConCase _ _ _ fs sexp) = do
   unless (null fs) $ do
     load v
     tell [ castclass sconTypeRef
@@ -245,12 +254,24 @@ cgAlt v (l, SConCase _ _ _ fs sexp) = do
     mapM_ loadElement (zip [0..] fs)
     tell [ pop ]
   cil sexp
-  tell [ br "END" ]
   where loadElement :: (Int, Name) -> CilCodegen ()
-        loadElement (e, MN i _) = tell [ dup
-                                       , ldc e
-                                       , ldelem_ref
-                                       , stloc i ]
+        loadElement (e, MN i _) = do
+          tell [ dup
+               , ldc e
+               , ldelem_ref ]
+          storeLocal i
+
+cgAlt :: LVar -> (Label, SAlt) -> CilCodegen ()
+cgAlt v (l, c@(SConCase{})) = do
+  tell [ label l ]
+  cgSConCase v c
+  tell [ br "END" ]
+
+cgAlt _ (l, SDefaultCase v) = do
+  tell [ label l ]
+  cil v
+  tell [ br "END" ]
+
 cgAlt _ (l, e) = do
   tell [ label l ]
   unsupported "case" e
@@ -304,16 +325,14 @@ cgOp LStrEq args = do
 --   tell [ clt
 --        , box systemBoolean ]
 
-cgOp (LPlus _)  args = integerOp add args
-cgOp (LMinus _) args = integerOp sub args
-cgOp (LEq (ATInt ITNative)) args = integerOp ceq args
-cgOp (LSExt ITNative ITBig) [i] = load i
-cgOp (LSLt (ATInt ITNative)) args = integerOp clt args
-
-cgOp (LIntStr _) [i] = do
+cgOp (LSExt ITNative ITBig) [i]  = load i
+cgOp (LPlus (ATInt _))      args = intOp add args
+cgOp (LMinus (ATInt _))     args = intOp sub args
+cgOp (LEq (ATInt _))        args = intOp ceq args
+cgOp (LSLt (ATInt _))       args = intOp clt args
+cgOp (LIntStr _)            [i]  = do
   load i
   tell [ callvirt String "mscorlib" "System.Object" "ToString" [] ]
-
 cgOp o _ = unsupported "operation" o
 
 unsupported :: Show a => String -> a -> CilCodegen ()
@@ -333,8 +352,8 @@ newLabel prefix = do
   put (CodegenState (suffix + 1) locals)
   return $ prefix ++ show suffix
 
-integerOp :: MethodDecl -> [LVar] -> CilCodegen ()
-integerOp op args = do
+intOp :: MethodDecl -> [LVar] -> CilCodegen ()
+intOp op args = do
   forM_ args loadInt32
   tell [ op
        , boxInt32 ]
