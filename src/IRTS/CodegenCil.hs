@@ -6,6 +6,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
 import           Data.DList (DList, fromList, toList, append)
+import           Data.Function (on)
+import           Data.List (partition, sortBy)
 import qualified Data.Text as T
 import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
 import           System.Process (readProcess)
@@ -87,7 +89,7 @@ cilFor decl sexp = execRWS (cil sexp) decl (CodegenState 0 0)
 cil :: SExp -> CilCodegen ()
 cil (SLet (Loc i) v e) = do
   case v of
-    SNothing -> tell [ ldnull ]
+    SNothing -> tell [ loadNothing ]
     _        -> cil v
   li <- localIndex i
   storeLocal li
@@ -168,27 +170,24 @@ cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
 
 cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
 
--- cil (SCase Shared v alts) = cil (SChkCase v (sortedAlts ++ [SDefaultCase SNothing]))
---   where sortedAlts = sortBy (compare `on` tag) alts
---         tag (SConCase _ t _ _ _) = t
---         tag c                    = error $ show c
+{-
+Case Shared (Loc 4) [SConCase 5 0 Data.SortedMap.Empty [{in0}] (SLet (Loc 6) (SCon Nothing 0 Data.SortedMap.Leaf [Loc 2,Loc 3]) (SCon Nothing 1 Data.SortedMap.M [Loc 5,Loc 6]))
+                    ,SConCase 5 1 Data.SortedMap.M [{in1},{in2}] (SLet (Loc 7) (SLet (Loc 7) SNothing (SLet (Loc 8) SNothing (SLet (Loc 9) SNothing (SApp False Data.SortedMap.treeInsert [Loc 7,Loc 8,Loc 9,Loc 5,Loc 2,Loc 3,Loc 6])))) (SCase Shared (Loc 7) [SConCase 8 0 Prelude.Either.Left [{in3}] (SCon Nothing 1 Data.SortedMap.M [Loc 5,Loc 8])
+            ,SConCase 8 1 Prelude.Either.Right [{in4}] (SCon Nothing 1 Data.SortedMap.M [Loc 5,Loc 8])]))]
+-}
+
+cil (SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
+                            in case defaultCase of
+                                    []      -> cgCase v (sorted cases ++ [SDefaultCase SNothing])
+                                    _       -> cgCase v (sorted cases ++ defaultCase)
+   where sorted = sortBy (compare `on` tag)
+         tag (SConCase _ t _ _ _) = t
+         tag c                    = error $ show c
+         caseType SConCase{}      = True
+         caseType SDefaultCase{}  = False
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
-cil (SChkCase v alts) | canBuildJumpTable alts = do
-  load v
-  loadSConTag
-  tell [ ldc baseTag
-       , sub
-       , switch labels ]
-  mapM_ (cgAlt v) (zip labels alts)
-  tell [ label "END" ]
-  where canBuildJumpTable (SConCase _ t _ _ _ : xs) = canBuildJumpTable' t xs
-        canBuildJumpTable _                         = False
-        canBuildJumpTable' t (SConCase _ t' _ _ _ : xs) | t' == t + 1 = canBuildJumpTable' t' xs
-        canBuildJumpTable' _ [SDefaultCase _]                         = True
-        canBuildJumpTable' _ _                                        = False
-        baseTag = let (SConCase _ t _ _ _) = head alts in t
-        labels = map (("L"++) . show) [0..(length alts - 1)]
+cil (SChkCase v alts) = cgCase v alts
 
 cil (SApp isTailCall n args) = do
   mapM_ load args
@@ -241,6 +240,25 @@ cgConst c = unsupported "const" c
   | Forgot
 -}
 
+cgCase :: LVar -> [SAlt] -> CilCodegen ()
+cgCase v alts | canBuildJumpTable alts = do
+  labelPrefix <- newLabel "L"
+  let labels = map ((labelPrefix++) . show) [0..(length alts - 1)]
+  endLabel <- newLabel "END"
+  load v
+  loadSConTag
+  tell [ ldc baseTag
+       , sub
+       , switch labels ]
+  mapM_ (cgAlt endLabel v) (zip labels alts)
+  tell [ label endLabel ]
+  where canBuildJumpTable (SConCase _ t _ _ _ : xs) = canBuildJumpTable' t xs
+        canBuildJumpTable _                         = False
+        canBuildJumpTable' t (SConCase _ t' _ _ _ : xs) | t' == t + 1 = canBuildJumpTable' t' xs
+        canBuildJumpTable' _ [SDefaultCase _]                         = True
+        canBuildJumpTable' _ _                                        = False
+        baseTag = let (SConCase _ t _ _ _) = head alts in t
+
 storeLocal :: Int -> CilCodegen ()
 storeLocal i = do
   tell [ stloc i ]
@@ -275,28 +293,21 @@ cgSConCase v (SConCase _ _ _ fs sexp) = do
                , ldelem_ref ]
           storeLocal i
 
-cgAlt :: LVar -> (Label, SAlt) -> CilCodegen ()
-cgAlt v (l, c@(SConCase{})) = do
+cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
+cgAlt end v (l, alt) = do
   tell [ label l ]
-  cgSConCase v c
-  tell [ br "END" ]
-
-cgAlt _ (l, SDefaultCase v) = do
-  tell [ label l ]
-  cil v
-  tell [ br "END" ]
-
-cgAlt _ (l, e) = do
-  tell [ label l ]
-  unsupported "case" e
-  tell [ br "END" ]
+  cg alt
+  tell [ br end ]
+  where cg c@(SConCase{})   = cgSConCase v c
+        cg (SDefaultCase e) = cil e
+        cg e                = unsupported "case" e
 
 cgOp :: PrimFn -> [LVar] -> CilCodegen ()
 cgOp LWriteStr [_, s] = do
   load s
   tell [ castclass String
        , call [] Void "mscorlib" "System.Console" "Write" [String]
-       , ldnull ]
+       , loadNothing ]
 
 cgOp LStrConcat args = do
   forM_ args loadString
@@ -406,6 +417,9 @@ load (Loc i) = do
       then ldarg i
       else ldloc li ]
 
+loadNothing :: MethodDecl
+loadNothing = ldsfld Cil.Object "" "Cons" "Nothing"
+
 localIndex :: Offset -> CilCodegen Offset
 localIndex i = do
   (SFun _ ps _ _) <- ask
@@ -425,14 +439,17 @@ cilName = quoted . T.unpack . showName
 
 consType :: TypeDef
 consType = classDef [CaPrivate] className noExtends noImplements
-                    [car, cdr, nil] [ctor, cctor] []
+                    [car, cdr, nil, nothing] [ctor, cctor] []
   where className = "Cons"
         nil       = Field [FaStatic, FaPublic] consTypeRef "Nil"
+        nothing   = Field [FaStatic, FaPublic] Cil.Object "Nothing"
         cctor     = Constructor [MaStatic] Void []
-                      [ ldnull
+                      [ loadNothing
                       , ldnull
                       , newobj "" className [Cil.Object, consTypeRef]
                       , stsfld consTypeRef "" className "Nil"
+                      , newobj "mscorlib" "System.Object" []
+                      , stsfld Cil.Object "" className "Nothing"
                       , ret ]
         car       = Field [FaPublic] Cil.Object "car"
         cdr       = Field [FaPublic] consTypeRef "cdr"
