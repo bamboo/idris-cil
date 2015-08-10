@@ -51,17 +51,26 @@ moduleName = "'λΠ'"
 method :: SDecl -> MethodDef
 method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) parameters (toList body)
   where attrs      = [MaStatic, MaAssembly]
-        retType    = Cil.Object
+        retType    = if isEntryPoint then Cil.Void else Cil.Object
         parameters = map param ps
         param n    = Param Nothing Cil.Object (cilName n)
         body       = let (CodegenState _ lc, cilForSexp) = cilFor decl sexp
-                     in fromList [entryPoint | isEntryPoint]
-                       `append` locals lc
-                       `append` cilForSexp
-                       `append` [ret]
+                     in if isEntryPoint
+                          then
+                            [entryPoint]
+                              `append` locals lc
+                              `append` fromList (removeLastTailCall $ toList cilForSexp)
+                              `append` [pop, ret]
+                          else
+                            locals lc
+                              `append` cilForSexp
+                              `append` [ret]
         locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
         local i    = Local Cil.Object ("l" ++ show i)
         isEntryPoint = name == entryPointName
+        removeLastTailCall :: [MethodDecl] -> [MethodDecl]
+        removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
+        removeLastTailCall (x:xs) = x:removeLastTailCall xs
 
 
 data CodegenState = CodegenState { nextLabel  :: Int
