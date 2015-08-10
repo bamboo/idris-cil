@@ -358,7 +358,8 @@ throwException :: String -> CilCodegen ()
 throwException message =
   tell [ ldstr message
        , newobj "mscorlib" "System.Exception" [String]
-       , throw ]
+       , throw
+       , ldnull ]
 
 newLabel :: String -> CilCodegen String
 newLabel prefix = do
