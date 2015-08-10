@@ -16,6 +16,7 @@ import           Idris.REPL
 import           System.Directory
 import           System.Exit
 import           System.FilePath
+import           System.Info (os)
 import           System.Process
 import           Test.Hspec
 import qualified Test.Hspec as H
@@ -76,7 +77,9 @@ codegenInfoFrom inputs output = do
   compile (Via "cil") output (Just mainProg)
 
 mono :: String -> IO String
-mono exe = readProcess "mono" [exe] ""
+mono exe = if os == "mingw32"
+             then readProcess exe [] ""
+             else readProcess "mono" [exe] ""
 
 peverify :: String -> IO ()
 peverify exe = traceProcess "peverify" [exe]
