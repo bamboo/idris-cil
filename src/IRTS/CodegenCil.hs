@@ -469,7 +469,8 @@ listCons  = NS (UN "::")    ["List", "Prelude"]
 
 quoted :: String -> String
 quoted n = "'" ++ concatMap validChar n ++ "'"
-  where validChar c = if c == '\''
+  where validChar :: Char -> String
+        validChar c = if c == '\''
                          then "\\'"
                          else [c]
 
