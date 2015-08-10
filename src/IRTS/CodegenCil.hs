@@ -105,8 +105,8 @@ cil SNothing = throwException "SNothing"
 cil (SOp op args) = cgOp op args
 
 -- Special constructors: True, False, List.Nil, List.::
-cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, box systemBoolean ]
-cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, box systemBoolean ]
+cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
+cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
 cil (SCon _ 0 n []) | n == listNil   = tell [ loadNil ]
 cil (SCon _ 1 n [x, xs]) | n == listCons = do load x
                                               load xs
@@ -129,7 +129,7 @@ cil (SCon Nothing t _ fs) = do
 cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
                     , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue =
   cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
-    tell [ unbox_any systemBoolean
+    tell [ unbox_any Bool
          , brtrue thenLabel ]
 
 cil (SCase Shared v [ SConCase _ c _ [] thenAlt, SDefaultCase elseAlt ]) =
@@ -221,7 +221,7 @@ cgConst (I i)   = cgConst . BI . fromIntegral $ i
 cgConst (BI i)  = tell [ ldc i
                        , boxInt32 ]
 cgConst (Ch c)  = tell [ ldc $ ord c
-                       , box systemChar ]
+                       , boxChar ]
 cgConst c = unsupported "const" c
 {-
   = I Int
@@ -249,7 +249,7 @@ storeLocal i = do
 
 cgBranchEq :: Const -> String -> CilCodegen ()
 cgBranchEq (Ch c) target =
-  tell [ unbox_any systemChar
+  tell [ unbox_any Char
        , ldc $ ord c
        , beq target ]
 cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
@@ -303,7 +303,7 @@ cgOp LStrConcat args = do
   tell [ call [] String "mscorlib" "System.String" "Concat" (map (const String) args) ]
 
 cgOp LStrCons [h, t] = do
-  loadAs systemChar h
+  loadAs Char h
   tell [ call [] String "mscorlib" "System.Char" "ToString" [Char] ]
   loadString t
   tell [ call [] String "mscorlib" "System.String" "Concat" [String, String] ]
@@ -311,13 +311,13 @@ cgOp LStrCons [h, t] = do
 cgOp LStrEq args = do
   forM_ args loadString
   tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (map (const String) args)
-       , box systemInt32 ] -- strange but correct
+       , boxInt32 ] -- strange but correct
 
 -- cgOp LStrHead [v] = do
 --   loadString v
 --   tell [ ldc_i4 0
 --        , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]
---        , box systemChar ]
+--        , boxChar ]
 
 -- cgOp LStrTail [v] = do
 --   loadString v
@@ -327,17 +327,17 @@ cgOp LStrEq args = do
 -- cgOp (LChInt ITNative) [c] = do
 --   load c
 --   tell [ unbox_any systemChar
---        , box systemInt32 ]
+--        , boxInt32 ]
 
 -- cgOp (LEq (ATInt ITChar)) args = do
 --   forM_ args loadChar
 --   tell [ ceq
---        , box systemBoolean ]
+--        , boxBoolean ]
 
 -- cgOp (LSLt (ATInt ITChar)) args = do
 --   forM_ args loadChar
 --   tell [ clt
---        , box systemBoolean ]
+--        , boxBoolean ]
 
 cgOp (LSExt ITNative ITBig) [i]  = load i
 cgOp (LPlus (ATInt _))      args = intOp add args
@@ -373,12 +373,14 @@ intOp op args = do
   tell [ op
        , boxInt32 ]
 
-boxInt32 :: MethodDecl
-boxInt32 = box systemInt32
+boxInt32, boxChar, boxBoolean :: MethodDecl
+boxInt32 = box Int32
+boxChar = box Char
+boxBoolean = box Bool
 
 loadInt32, loadChar :: LVar -> CilCodegen ()
-loadInt32 = loadAs systemInt32
-loadChar  = loadAs systemChar
+loadInt32 = loadAs Int32
+loadChar  = loadAs Char
 
 loadAs :: PrimitiveType -> LVar -> CilCodegen ()
 loadAs valueType l = do
