@@ -30,6 +30,8 @@ library
                   , process
                   , text
                   , transformers
+                  , bytestring
+                  , utf8-string
 
 executable idris-cil
   main-is:            Main.hs

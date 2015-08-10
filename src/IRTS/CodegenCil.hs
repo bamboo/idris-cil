@@ -2,6 +2,8 @@
 module IRTS.CodegenCil where
 
 import           Control.Monad.RWS.Strict hiding (local)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
 import           Data.DList (DList, fromList, toList, append)
 import qualified Data.Text as T
@@ -20,10 +22,11 @@ import qualified Language.Cil as Cil
 import           IRTS.Cil.UnreachableCodeRemoval
 
 codegenCil :: CodeGenerator
-codegenCil ci = do writeFile cilFile $ pr (assemblyFor ci) ""
+codegenCil ci = do BS.writeFile cilFile $ UTF8.fromString cilText
                    when (outputExtension /= ".il") $
                      ilasm cilFile output
   where cilFile = replaceExtension output "il"
+        cilText = pr (assemblyFor ci) ""
         output  = outputFile ci
         outputExtension = takeExtension output
 
