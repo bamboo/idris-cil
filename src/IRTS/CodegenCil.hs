@@ -108,11 +108,11 @@ cil (SOp op args) = cgOp op args
 -- Special constructors: True, False, List.Nil, List.::
 cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
 cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
-cil (SCon _ 0 n []) | n == listNil   = tell [ loadNil ]
-cil (SCon _ 1 n [x, xs]) | n == listCons = do load x
-                                              load xs
-                                              tell [ castclass consTypeRef
-                                                   , newobj "" "Cons" [Cil.Object, consTypeRef] ]
+-- cil (SCon _ 0 n []) | n == listNil   = tell [ loadNil ]
+-- cil (SCon _ 1 n [x, xs]) | n == listCons = do load x
+--                                               load xs
+--                                               tell [ castclass consTypeRef
+--                                                    , newobj "" "Cons" [Cil.Object, consTypeRef] ]
 -- General constructors
 cil (SCon Nothing t _ fs) = do
   tell [ ldc t
@@ -144,36 +144,30 @@ cil (SCase Shared v [ SConstCase c thenAlt, SDefaultCase elseAlt ]) =
     cgBranchEq c thenLabel
 
 -- List case matching
-cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
-                    , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
+-- cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
+--                     , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
 
-  nilLabel <- newLabel "NIL"
-  endLabel <- newLabel "END"
+--   nilLabel <- newLabel "NIL"
+--   endLabel <- newLabel "END"
 
-  load v
-  tell [ loadNil
-       , beq nilLabel ]
-  load v
-  tell [ castclass consTypeRef
-       , dup
-       , ldfld Cil.Object "" "Cons" "car" ]
-  bind x
-  tell [ ldfld consTypeRef "" "Cons" "cdr" ]
-  bind xs
-  cil consAlt
-  tell [ br endLabel
-       , label nilLabel ]
-  cil nilAlt
-  tell [ label endLabel ]
-  where bind (MN i _) = storeLocal i
+--   load v
+--   tell [ loadNil
+--        , beq nilLabel ]
+--   load v
+--   tell [ castclass consTypeRef
+--        , dup
+--        , ldfld Cil.Object "" "Cons" "car" ]
+--   bind x
+--   tell [ ldfld consTypeRef "" "Cons" "cdr" ]
+--   bind xs
+--   cil consAlt
+--   tell [ br endLabel
+--        , label nilLabel ]
+--   cil nilAlt
+--   tell [ label endLabel ]
+--   where bind (MN i _) = storeLocal i
 
 cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
-
-{-
-Case Shared (Loc 4) [SConCase 5 0 Data.SortedMap.Empty [{in0}] (SLet (Loc 6) (SCon Nothing 0 Data.SortedMap.Leaf [Loc 2,Loc 3]) (SCon Nothing 1 Data.SortedMap.M [Loc 5,Loc 6]))
-                    ,SConCase 5 1 Data.SortedMap.M [{in1},{in2}] (SLet (Loc 7) (SLet (Loc 7) SNothing (SLet (Loc 8) SNothing (SLet (Loc 9) SNothing (SApp False Data.SortedMap.treeInsert [Loc 7,Loc 8,Loc 9,Loc 5,Loc 2,Loc 3,Loc 6])))) (SCase Shared (Loc 7) [SConCase 8 0 Prelude.Either.Left [{in3}] (SCon Nothing 1 Data.SortedMap.M [Loc 5,Loc 8])
-            ,SConCase 8 1 Prelude.Either.Right [{in4}] (SCon Nothing 1 Data.SortedMap.M [Loc 5,Loc 8])]))]
--}
 
 cil (SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
                             in case defaultCase of
