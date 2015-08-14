@@ -92,15 +92,13 @@ cil (SLet (Loc i) v e) = do
   case v of
     SNothing -> tell [ loadNothing ]
     _        -> cil v
-  li <- localIndex i
-  storeLocal li
+  localIndex i >>= storeLocal
   cil e
 
 cil (SUpdate (Loc i) v) = do
   cil v
   tell [ dup ]
-  li <- localIndex i
-  storeLocal li
+  localIndex i >>= storeLocal
 
 cil (SV v) = load v
 cil (SConst c) = cgConst c
