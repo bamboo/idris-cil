@@ -68,7 +68,7 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
                               `append` [pop, ret]
                           else
                             [comment (show decl)]
-                              `append`  locals lc
+                              `append` locals lc
                               `append` cilForSexp
                               `append` [ret]
         locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
@@ -133,10 +133,10 @@ cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
     tell [ unbox_any Bool
          , brtrue thenLabel ]
 
-cil (SCase Shared v [ SConCase _ c _ [] thenAlt, SDefaultCase elseAlt ]) =
+cil (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
   cgIfThenElse v thenAlt elseAlt $ \thenLabel -> do
     loadSConTag
-    tell [ ldc c
+    tell [ ldc tag
          , beq thenLabel ]
 
 cil (SCase Shared v [ SConstCase c thenAlt, SDefaultCase elseAlt ]) =
