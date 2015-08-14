@@ -271,7 +271,7 @@ cgBranchEq (I i) target =
 cgBranchEq c _ = unsupported "branch on const" c
 
 cgSConCase :: LVar -> SAlt -> CilCodegen ()
-cgSConCase v (SConCase _ _ _ fs sexp) = do
+cgSConCase v (SConCase offset _ _ fs sexp) = do
   unless (null fs) $ do
     load v
     tell [ castclass sconTypeRef
@@ -284,7 +284,7 @@ cgSConCase v (SConCase _ _ _ fs sexp) = do
           tell [ dup
                , ldc e
                , ldelem_ref ]
-          storeLocal i
+          localIndex (offset + i) >>= storeLocal
 
 cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
 cgAlt end v (l, alt) = do
