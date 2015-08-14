@@ -276,15 +276,14 @@ cgSConCase v (SConCase offset _ _ fs sexp) = do
     load v
     tell [ castclass sconTypeRef
          , ldfld array "" "SCon" "fields" ]
-    mapM_ loadElement (zip [0..] fs)
+    offset' <- localIndex offset
+    mapM_ project (zip [0..length fs - 1] [offset'..])
     tell [ pop ]
   cil sexp
-  where loadElement :: (Int, Name) -> CilCodegen ()
-        loadElement (e, MN i _) = do
-          tell [ dup
-               , ldc e
-               , ldelem_ref ]
-          localIndex (offset + i) >>= storeLocal
+  where project (f, l) = do tell [ dup
+                                 , ldc f
+                                 , ldelem_ref ]
+                            storeLocal l
 
 cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
 cgAlt end v (l, alt) = do
