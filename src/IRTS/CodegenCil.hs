@@ -67,7 +67,10 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
                               `append` fromList (removeLastTailCall $ toList cilForSexp)
                               `append` [pop, ret]
                           else
-                            locals lc
+                            [comment (show decl)]
+                              `append`  locals lc
+                              `append` (fromList traceCall)
+                              `append` consoleWriteLine (cilName name)
                               `append` cilForSexp
                               `append` [ret]
         locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
@@ -76,6 +79,17 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
         removeLastTailCall :: [MethodDecl] -> [MethodDecl]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
+        traceCall = [ldstr ", ", ldc (length ps), newarr Cil.Object]
+                    ++ concatMap traceArg argIndices
+                    ++ [
+                        call [] String "mscorlib" "System.String" "Join" [String, array]
+                       ,call [] Void "mscorlib" "System.Console" "WriteLine" [String]]
+
+        argIndices :: [Int]
+        argIndices = [0..(length ps) - 1]
+        traceArg :: Int -> [MethodDecl]
+        traceArg n = [dup, ldc n, ldarg n, stelem_ref]
+
 
 
 data CodegenState = CodegenState { nextLabel  :: Int
@@ -193,7 +207,13 @@ cil (SApp isTailCall n args) = do
   mapM_ load args
   if isTailCall
     then tell [ tailcall app, ret, ldnull ]
-    else tell [ app ]
+    else do tell [ app ]
+            tell [ dup
+                 , objectToString
+                 , ldstr " => "
+                 , call [] Void "mscorlib" "System.Console" "Write" [String]
+                 , call [] Void "mscorlib" "System.Console" "WriteLine" [String] ]
+
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
 cil e = unsupported "expression" e
@@ -357,8 +377,11 @@ cgOp (LEq (ATInt _))        args = intOp ceq args
 cgOp (LSLt (ATInt _))       args = intOp clt args
 cgOp (LIntStr _)            [i]  = do
   load i
-  tell [ callvirt String "mscorlib" "System.Object" "ToString" [] ]
+  tell [ objectToString ]
 cgOp o _ = unsupported "operation" o
+
+objectToString :: MethodDecl
+objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
 
 unsupported :: Show a => String -> a -> CilCodegen ()
 unsupported desc v = do
