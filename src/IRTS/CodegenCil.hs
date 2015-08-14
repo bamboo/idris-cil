@@ -36,7 +36,7 @@ ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= putStr
 
 assemblyFor :: CodegenInfo -> Assembly
-assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, consType]
+assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, consType, nothingType]
   where asmName  = quoted $ takeBaseName (outputFile ci)
 
 moduleFor :: CodegenInfo -> TypeDef
@@ -413,9 +413,6 @@ load (Loc i) = do
       then ldarg i
       else ldloc li ]
 
-loadNothing :: MethodDecl
-loadNothing = ldsfld Cil.Object "" "Cons" "Nothing"
-
 localIndex :: Offset -> CilCodegen Offset
 localIndex i = do
   (SFun _ ps _ _) <- ask
@@ -433,19 +430,33 @@ cilName = quoted . T.unpack . showName
         showName (SN sn)   = T.pack $ show sn
         showName e = error $ "Unsupported name `" ++ show e ++ "'"
 
+loadNothing :: MethodDecl
+loadNothing = ldsfld Cil.Object "" "Nothing" "Default"
+
+nothingType :: TypeDef
+nothingType = classDef [CaPrivate] className noExtends noImplements
+                    [nothing] [ctor, cctor] []
+  where className = "Nothing"
+        nothing   = Field [FaStatic, FaPublic] Cil.Object "Default"
+        cctor     = Constructor [MaStatic] Void []
+                      [ newobj "" className []
+                      , stsfld Cil.Object "" className "Default"
+                      , ret ]
+        ctor      = Constructor [MaPublic] Void []
+                      [ ldarg 0
+                      , call [CcInstance] Void "" "object" ".ctor" []
+                      , ret ]
+
 consType :: TypeDef
 consType = classDef [CaPrivate] className noExtends noImplements
-                    [car, cdr, nil, nothing] [ctor, cctor] []
+                    [car, cdr, nil] [ctor, cctor] []
   where className = "Cons"
         nil       = Field [FaStatic, FaPublic] consTypeRef "Nil"
-        nothing   = Field [FaStatic, FaPublic] Cil.Object "Nothing"
         cctor     = Constructor [MaStatic] Void []
                       [ loadNothing
                       , ldnull
                       , newobj "" className [Cil.Object, consTypeRef]
                       , stsfld consTypeRef "" className "Nil"
-                      , newobj "mscorlib" "System.Object" []
-                      , stsfld Cil.Object "" className "Nothing"
                       , ret ]
         car       = Field [FaPublic] Cil.Object "car"
         cdr       = Field [FaPublic] consTypeRef "cdr"
