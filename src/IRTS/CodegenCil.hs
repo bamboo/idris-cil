@@ -463,7 +463,7 @@ consType = classDef [CaPrivate] className noExtends noImplements
 
 sconType :: TypeDef
 sconType = classDef [CaPrivate] className noExtends noImplements
-                    [sconTag, sconFields] [sconCtor] []
+                    [sconTag, sconFields] [sconCtor, sconToString] []
   where className  = "SCon"
         sconTag    = Field [FaPublic] Int32 "tag"
         sconFields = Field [FaPublic] array "fields"
@@ -478,6 +478,14 @@ sconType = classDef [CaPrivate] className noExtends noImplements
                      , ldarg 2
                      , stfld array "" className "fields"
                      , ret ]
+        sconToString = Method [MaPublic, MaVirtual] String "ToString" []
+                       [ ldstr "SCon "
+                       , ldarg 0
+                       , ldfld Int32 "" className "tag"
+                       , boxInt32
+                       , objectToString
+                       , call [] String "mscorlib" "System.String" "Concat" [String, String]
+                       , ret ]
 
 consTypeRef, sconTypeRef :: PrimitiveType
 consTypeRef = ReferenceType "" "Cons"
