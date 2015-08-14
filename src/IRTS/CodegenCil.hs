@@ -169,15 +169,16 @@ cil (SCase Shared v [ SConstCase c thenAlt, SDefaultCase elseAlt ]) =
 
 cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
 
-cil (SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
-                            in case defaultCase of
-                                    []      -> cgCase v (sorted cases ++ [SDefaultCase SNothing])
-                                    _       -> cgCase v (sorted cases ++ defaultCase)
+cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
+                              in case defaultCase of
+                                      []      -> cgCase v (sorted cases ++ [SDefaultCase SNothing])
+                                      _       -> cgCase v (sorted cases ++ defaultCase)
    where sorted = sortBy (compare `on` tag)
          tag (SConCase _ t _ _ _) = t
          tag c                    = error $ show c
          caseType SConCase{}      = True
          caseType SDefaultCase{}  = False
+         caseType _               = error $ show e
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) = cgCase v alts
