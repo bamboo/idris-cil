@@ -69,8 +69,6 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
                           else
                             [comment (show decl)]
                               `append`  locals lc
-                              `append` (fromList traceCall)
-                              `append` consoleWriteLine (cilName name)
                               `append` cilForSexp
                               `append` [ret]
         locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
@@ -79,17 +77,6 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
         removeLastTailCall :: [MethodDecl] -> [MethodDecl]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
-        traceCall = [ldstr ", ", ldc (length ps), newarr Cil.Object]
-                    ++ concatMap traceArg argIndices
-                    ++ [
-                        call [] String "mscorlib" "System.String" "Join" [String, array]
-                       ,call [] Void "mscorlib" "System.Console" "WriteLine" [String]]
-
-        argIndices :: [Int]
-        argIndices = [0..(length ps) - 1]
-        traceArg :: Int -> [MethodDecl]
-        traceArg n = [dup, ldc n, ldarg n, stelem_ref]
-
 
 
 data CodegenState = CodegenState { nextLabel  :: Int
@@ -207,13 +194,7 @@ cil (SApp isTailCall n args) = do
   mapM_ load args
   if isTailCall
     then tell [ tailcall app, ret, ldnull ]
-    else do tell [ app ]
-            tell [ dup
-                 , objectToString
-                 , ldstr " => "
-                 , call [] Void "mscorlib" "System.Console" "Write" [String]
-                 , call [] Void "mscorlib" "System.Console" "WriteLine" [String] ]
-
+    else tell [ app ]
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
 cil e = unsupported "expression" e
