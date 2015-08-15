@@ -135,7 +135,10 @@ cil (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
     tell [ ldc tag
          , beq thenLabel ]
 
-cil (SCase Shared v [ SConstCase c thenAlt, SDefaultCase elseAlt ]) =
+-- In some situations idris gives us a SCase with two default clauses (as evidenced by idris-game-of-life)
+cil (SCase Shared v [t@SConstCase{}, e@SDefaultCase{}, SDefaultCase{}]) = cil (SCase Shared v [t, e])
+
+cil (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
   cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
     cgBranchEq c thenLabel
 
