@@ -95,10 +95,10 @@ cil (SLet (Loc i) v e) = do
   localIndex i >>= storeLocal
   cil e
 
-cil (SV v) = load v
-cil (SConst c) = cgConst c
-cil SNothing = throwException "SNothing"
 cil (SUpdate _ v) = cil v
+cil (SV v)        = load v
+cil (SConst c)    = cgConst c
+cil SNothing      = throwException "SNothing"
 cil (SOp op args) = cgOp op args
 
 -- Special constructors: True, False, List.Nil, List.::
