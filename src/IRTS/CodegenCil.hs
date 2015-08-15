@@ -142,6 +142,20 @@ cil (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
   cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
     cgBranchEq c thenLabel
 
+cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
+
+cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
+                              in case defaultCase of
+                                   [] -> cgCase v (sorted cases ++ [SDefaultCase SNothing])
+                                   _  -> cgCase v (sorted cases ++ defaultCase)
+   where sorted = sortBy (compare `on` tag)
+         tag (SConCase _ t _ _ _) = t
+         tag c                    = unsupportedCase c
+         caseType SConCase{}      = True
+         caseType SDefaultCase{}  = False
+         caseType c               = unsupportedCase c
+         unsupportedCase c        = error $ show c ++ " in\n" ++ show e
+
 -- List case matching
 -- cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
 --                     , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
@@ -165,19 +179,6 @@ cil (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
 --   cil nilAlt
 --   tell [ label endLabel ]
 --   where bind (MN i _) = storeLocal i
-
-cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
-
-cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
-                              in case defaultCase of
-                                      []      -> cgCase v (sorted cases ++ [SDefaultCase SNothing])
-                                      _       -> cgCase v (sorted cases ++ defaultCase)
-   where sorted = sortBy (compare `on` tag)
-         tag (SConCase _ t _ _ _) = t
-         tag c                    = error $ show c
-         caseType SConCase{}      = True
-         caseType SDefaultCase{}  = False
-         caseType _               = error $ show e
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) = cgCase v alts
