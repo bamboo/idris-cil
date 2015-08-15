@@ -317,16 +317,16 @@ cgOp LStrEq args = do
   tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (map (const String) args)
        , boxInt32 ] -- strange but correct
 
--- cgOp LStrHead [v] = do
---   loadString v
---   tell [ ldc_i4 0
---        , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]
---        , boxChar ]
+cgOp LStrHead [v] = do
+  loadString v
+  tell [ ldc_i4 0
+       , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]
+       , boxChar ]
 
--- cgOp LStrTail [v] = do
---   loadString v
---   tell [ ldc_i4 1
---        , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
+cgOp LStrTail [v] = do
+  loadString v
+  tell [ ldc_i4 1
+       , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
 
 -- cgOp (LChInt ITNative) [c] = do
 --   load c
