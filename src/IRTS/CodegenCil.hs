@@ -36,7 +36,7 @@ ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= putStr
 
 assemblyFor :: CodegenInfo -> Assembly
-assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, consType, nothingType]
+assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, nothingType]
   where asmName  = quoted $ takeBaseName (outputFile ci)
 
 moduleFor :: CodegenInfo -> TypeDef
@@ -104,11 +104,7 @@ cil (SOp op args) = cgOp op args
 -- Special constructors: True, False, List.Nil, List.::
 cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
 cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
--- cil (SCon _ 0 n []) | n == listNil   = tell [ loadNil ]
--- cil (SCon _ 1 n [x, xs]) | n == listCons = do load x
---                                               load xs
---                                               tell [ castclass consTypeRef
---                                                    , newobj "" "Cons" [Cil.Object, consTypeRef] ]
+
 -- General constructors
 cil (SCon Nothing t _ fs) = do
   tell [ ldc t
@@ -155,30 +151,6 @@ cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
          caseType SDefaultCase{}  = False
          caseType c               = unsupportedCase c
          unsupportedCase c        = error $ show c ++ " in\n" ++ show e
-
--- List case matching
--- cil (SCase Shared v [ SConCase _ 1 nCons [x, xs] consAlt
---                     , SConCase _ 0 nNil  []      nilAlt ]) | nCons == listCons && nNil == listNil = do
-
---   nilLabel <- newLabel "NIL"
---   endLabel <- newLabel "END"
-
---   load v
---   tell [ loadNil
---        , beq nilLabel ]
---   load v
---   tell [ castclass consTypeRef
---        , dup
---        , ldfld Cil.Object "" "Cons" "car" ]
---   bind x
---   tell [ ldfld consTypeRef "" "Cons" "cdr" ]
---   bind xs
---   cil consAlt
---   tell [ br endLabel
---        , label nilLabel ]
---   cil nilAlt
---   tell [ label endLabel ]
---   where bind (MN i _) = storeLocal i
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) = cgCase v alts
@@ -447,31 +419,6 @@ nothingType = classDef [CaPrivate] className noExtends noImplements
                       , call [CcInstance] Void "" "object" ".ctor" []
                       , ret ]
 
-consType :: TypeDef
-consType = classDef [CaPrivate] className noExtends noImplements
-                    [car, cdr, nil] [ctor, cctor] []
-  where className = "Cons"
-        nil       = Field [FaStatic, FaPublic] consTypeRef "Nil"
-        cctor     = Constructor [MaStatic] Void []
-                      [ loadNothing
-                      , ldnull
-                      , newobj "" className [Cil.Object, consTypeRef]
-                      , stsfld consTypeRef "" className "Nil"
-                      , ret ]
-        car       = Field [FaPublic] Cil.Object "car"
-        cdr       = Field [FaPublic] consTypeRef "cdr"
-        ctor      = Constructor [MaPublic] Void [ Param Nothing Cil.Object "car"
-                                                , Param Nothing consTypeRef "cdr" ]
-                      [ ldarg 0
-                      , call [CcInstance] Void "" "object" ".ctor" []
-                      , ldarg 0
-                      , ldarg 1
-                      , stfld Cil.Object "" className "car"
-                      , ldarg 0
-                      , ldarg 2
-                      , stfld consTypeRef "" className "cdr"
-                      , ret ]
-
 sconType :: TypeDef
 sconType = classDef [CaPrivate] className noExtends noImplements
                     [sconTag, sconFields] [sconCtor, sconToString] []
@@ -508,11 +455,9 @@ systemChar    = ValueType "mscorlib" "System.Char"
 systemInt32   = ValueType "mscorlib" "System.Int32"
 array          = Array Cil.Object
 
-boolFalse, boolTrue, listNil, listCons :: Name
+boolFalse, boolTrue :: Name
 boolFalse = NS (UN "False") ["Bool", "Prelude"]
 boolTrue  = NS (UN "True")  ["Bool", "Prelude"]
-listNil   = NS (UN "Nil")   ["List", "Prelude"]
-listCons  = NS (UN "::")    ["List", "Prelude"]
 
 quoted :: String -> String
 quoted n = "'" ++ concatMap validChar n ++ "'"
