@@ -19,6 +19,7 @@ library
   hs-source-dirs:   src
   exposed-modules:  IRTS.CodegenCil
                   , IRTS.Cil.UnreachableCodeRemoval
+                  , IRTS.Cil.FFI
   build-depends:    base >= 4.7 && <5
                   , containers
                   , directory
@@ -32,6 +33,7 @@ library
                   , transformers
                   , bytestring
                   , utf8-string
+                  , parsec >= 3.1.9
 
 executable idris-cil
   main-is:            Main.hs

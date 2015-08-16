@@ -21,6 +21,7 @@ import           Idris.Core.TT
 import           Language.Cil
 import qualified Language.Cil as Cil
 
+import           IRTS.Cil.FFI
 import           IRTS.Cil.UnreachableCodeRemoval
 
 codegenCil :: CodeGenerator
@@ -155,6 +156,21 @@ cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) = cgCase v alts
 
+-- idris SExp FFI
+-- SFun Main.systemMax [{e0},{e1},w] 1
+-- (SForeign (FApp C_IntT [FUnknown,FCon C_IntNative])
+--    (FStr "[mscorlib]System.Math.Max")
+--    [(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 0)
+--    ,(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 1)])
+cil (SForeign (FApp returnType _) (FStr qname) args) = do
+  let (Right (a, t, m)) = parseAssemblyQualifiedName qname
+  mapM_ loadArg args
+  tell [ call [] (foreignTypeToCilType returnType) a t m (map cilType args)
+       , boxInt32 ] -- dependent on returnType
+  where loadArg (FApp t _, Loc i) = tell [ ldarg i
+                                         , unbox_any (foreignTypeToCilType t) ]
+        cilType (FApp t _, _)     = foreignTypeToCilType t
+
 cil (SApp isTailCall n args) = do
   mapM_ load args
   if isTailCall
@@ -163,6 +179,9 @@ cil (SApp isTailCall n args) = do
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
 cil e = unsupported "expression" e
+
+foreignTypeToCilType :: Name -> PrimitiveType
+foreignTypeToCilType (UN _) = Int32
 
 loadSConTag :: CilCodegen ()
 loadSConTag = tell [ castclass (ReferenceType "" "SCon")
