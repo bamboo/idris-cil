@@ -167,7 +167,8 @@ cil (SForeign (FApp returnType _) (FStr qname) args) = do
   mapM_ loadArg args
   tell [ call [] (foreignTypeToCilType returnType) a t m (map cilType args)
        , boxInt32 ] -- dependent on returnType
-  where loadArg (FApp t _, Loc i) = tell [ ldarg i
+  where loadArg :: (FDesc, LVar) -> CilCodegen ()
+        loadArg (FApp t _, Loc i) = tell [ ldarg i
                                          , unbox_any (foreignTypeToCilType t) ]
         cilType (FApp t _, _)     = foreignTypeToCilType t
 
