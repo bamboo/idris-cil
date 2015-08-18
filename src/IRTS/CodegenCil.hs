@@ -163,9 +163,9 @@ cil (SChkCase v alts) = cgCase v alts
 --    [(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 0)
 --    ,(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 1)])
 cil (SForeign (FApp returnType _) (FStr qname) args) = do
-  let (Right (a, t, m)) = parseAssemblyQualifiedName qname
+  let (Right (assemblyName, typeName, methodName)) = parseAssemblyQualifiedName qname
   mapM_ loadArg args
-  tell [ call [] (foreignTypeToCilType returnType) a t m (map cilType args)
+  tell [ call [] (foreignTypeToCilType returnType) assemblyName typeName methodName (map cilType args)
        , boxInt32 ] -- dependent on returnType
   where loadArg :: (FDesc, LVar) -> CilCodegen ()
         loadArg (FApp t _, Loc i) = tell [ ldarg i
