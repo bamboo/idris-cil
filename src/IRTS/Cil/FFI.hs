@@ -3,7 +3,7 @@ module IRTS.Cil.FFI (parseAssemblyQualifiedName) where
 import Text.ParserCombinators.Parsec
 
 parseAssemblyQualifiedName :: String -> Either ParseError (String, String, String)
-parseAssemblyQualifiedName = parse assemblyQualifiedName "qualified name"
+parseAssemblyQualifiedName = parse assemblyQualifiedName "foreign name"
 
 assemblyQualifiedName :: GenParser Char st (String, String, String)
 assemblyQualifiedName = do

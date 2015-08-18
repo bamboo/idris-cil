@@ -162,11 +162,13 @@ cil (SChkCase v alts) = cgCase v alts
 --    (FStr "[mscorlib]System.Math.Max")
 --    [(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 0)
 --    ,(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 1)])
-cil (SForeign (FApp returnType _) (FStr qname) args) = do
-  let (Right (assemblyName, typeName, methodName)) = parseAssemblyQualifiedName qname
-  mapM_ loadArg args
-  tell [ call [] (foreignTypeToCilType returnType) assemblyName typeName methodName (map cilType args)
-       , boxInt32 ] -- dependent on returnType
+cil (SForeign (FApp returnType _) (FStr qname) args) =
+  case parseAssemblyQualifiedName qname of
+    Right (assemblyName, typeName, methodName) -> do
+      mapM_ loadArg args
+      tell [ call [] (foreignTypeToCilType returnType) assemblyName typeName methodName (map cilType args)
+           , boxInt32 ] -- dependent on returnType
+    Left e                                     -> error $ show e
   where loadArg :: (FDesc, LVar) -> CilCodegen ()
         loadArg (FApp t _, Loc i) = tell [ ldarg i
                                          , unbox_any (foreignTypeToCilType t) ]
