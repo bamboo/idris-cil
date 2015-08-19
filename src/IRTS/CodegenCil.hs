@@ -103,7 +103,7 @@ cil (SConst c)    = cgConst c
 cil (SOp op args) = cgOp op args
 cil SNothing      = throwException "SNothing"
 
--- Special constructors: True, False, List.Nil, List.::
+-- Special constructors: True, False
 cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
 cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
 
