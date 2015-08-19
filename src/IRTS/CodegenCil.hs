@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards, OverloadedStrings, OverloadedLists #-}
-module IRTS.CodegenCil where
+module IRTS.CodegenCil (codegenCil) where
 
 import           Control.Monad.RWS.Strict hiding (local)
 import qualified Data.ByteString as BS
@@ -390,9 +390,8 @@ boxInt32 = box Int32
 boxChar = box Char
 boxBoolean = box Bool
 
-loadInt32, loadChar :: LVar -> CilCodegen ()
+loadInt32 :: LVar -> CilCodegen ()
 loadInt32 = loadAs Int32
-loadChar  = loadAs Char
 
 loadAs :: PrimitiveType -> LVar -> CilCodegen ()
 loadAs valueType l = do
@@ -403,9 +402,6 @@ loadString :: LVar -> CilCodegen ()
 loadString l = do
   load l
   tell [ castclass String ]
-
-loadNil :: MethodDecl
-loadNil = ldsfld consTypeRef "" "Cons" "Nil"
 
 ldc :: (Integral n) => n -> MethodDecl
 ldc = ldc_i4 . fromIntegral
@@ -478,15 +474,11 @@ sconType = classDef [CaPrivate] className noExtends noImplements
                        , call [] String "mscorlib" "System.String" "Concat" [String, String]
                        , ret ]
 
-consTypeRef, sconTypeRef :: PrimitiveType
-consTypeRef = ReferenceType "" "Cons"
+sconTypeRef :: PrimitiveType
 sconTypeRef = ReferenceType "" "SCon"
 
-systemBoolean, systemChar, systemInt32, array :: PrimitiveType
-systemBoolean = ValueType "mscorlib" "System.Boolean"
-systemChar    = ValueType "mscorlib" "System.Char"
-systemInt32   = ValueType "mscorlib" "System.Int32"
-array          = Array Cil.Object
+array :: PrimitiveType
+array = Array Cil.Object
 
 boolFalse, boolTrue :: Name
 boolFalse = NS (UN "False") ["Bool", "Prelude"]
@@ -498,7 +490,3 @@ quoted n = "'" ++ concatMap validChar n ++ "'"
         validChar c = if c == '\''
                          then "\\'"
                          else [c]
-
-consoleWriteLine :: String -> DList MethodDecl
-consoleWriteLine s = [ ldstr s
-                     , call [] Void "mscorlib" "System.Console" "WriteLine" [String] ]
