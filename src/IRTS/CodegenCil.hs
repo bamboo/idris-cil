@@ -156,25 +156,6 @@ cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) = cgCase v alts
 
--- idris SExp FFI
--- SFun Main.systemMax [{e0},{e1},w] 1
--- (SForeign (FApp C_IntT [FUnknown,FCon C_IntNative])
---    (FStr "[mscorlib]System.Math.Max")
---    [(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 0)
---    ,(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 1)])
-cil (SForeign (FApp returnType _) (FStr qname) args) =
-  case parseAssemblyQualifiedName qname of
-    Left  e                                    -> error $ show e
-    Right (assemblyName, typeName, methodName) -> do
-      mapM_ loadArg args
-      tell [ call [] cilReturnType assemblyName typeName methodName (map cilType args)
-           , boxInt32 ] -- dependent on returnType
-  where loadArg :: (FDesc, LVar) -> CilCodegen ()
-        loadArg (FApp t _, Loc i) = tell [ ldarg i
-                                         , unbox_any (foreignTypeToCilType t) ]
-        cilType (FApp t _, _)     = foreignTypeToCilType t
-        cilReturnType             = foreignTypeToCilType returnType
-
 cil (SApp isTailCall n args) = do
   mapM_ load args
   if isTailCall
@@ -182,10 +163,39 @@ cil (SApp isTailCall n args) = do
     else tell [ app ]
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
+cil (SForeign returnType (FStr qname) args) =
+  case parseAssemblyQualifiedName qname of
+    Right (isInstance, assemblyName, typeName, methodName) -> do
+      forM_ args loadArg
+      let signature = if isInstance then drop 1 args else args
+      tell [ call [CcInstance | isInstance]
+               cilReturnType assemblyName typeName methodName (map cilType signature) ]
+      maybeBox cilReturnType
+    Left  e -> error $ show e
+  where loadArg :: (FDesc, LVar) -> CilCodegen ()
+        loadArg (t, Loc i) = do tell [ ldarg i ]
+                                castOrUnbox (foreignTypeToCilType t)
+        cilType (t, _)     = foreignTypeToCilType t
+        cilReturnType      = foreignTypeToCilType returnType
+
 cil e = unsupported "expression" e
 
-foreignTypeToCilType :: Name -> PrimitiveType
-foreignTypeToCilType (UN _) = Int32
+castOrUnbox :: PrimitiveType -> CilCodegen ()
+castOrUnbox t =
+  tell [
+    if isValueType t
+       then unbox_any t
+       else castclass t
+    ]
+
+maybeBox :: PrimitiveType -> CilCodegen ()
+maybeBox t =
+  when (isValueType t) $
+    tell [ box t ]
+
+isValueType :: PrimitiveType -> Bool
+isValueType Int32 = True
+isValueType _     = False
 
 loadSConTag :: CilCodegen ()
 loadSConTag = tell [ castclass (ReferenceType "" "SCon")
