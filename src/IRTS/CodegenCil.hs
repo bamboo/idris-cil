@@ -100,8 +100,8 @@ cil (SLet (Loc i) v e) = do
 cil (SUpdate _ v) = cil v
 cil (SV v)        = load v
 cil (SConst c)    = cgConst c
-cil SNothing      = throwException "SNothing"
 cil (SOp op args) = cgOp op args
+cil SNothing      = throwException "SNothing"
 
 -- Special constructors: True, False, List.Nil, List.::
 cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
