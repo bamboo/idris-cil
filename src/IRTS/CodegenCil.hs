@@ -157,7 +157,7 @@ cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) = cgCase v alts
 
 cil (SApp isTailCall n args) = do
-  mapM_ load args
+  forM_ args load
   if isTailCall
     then tell [ tailcall app, ret, ldnull ]
     else tell [ app ]
