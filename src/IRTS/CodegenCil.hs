@@ -25,13 +25,14 @@ import           IRTS.Cil.FFI
 import           IRTS.Cil.UnreachableCodeRemoval
 
 codegenCil :: CodeGenerator
-codegenCil ci = do BS.writeFile cilFile $ UTF8.fromString cilText
+codegenCil ci = do writeFileUTF8 cilFile cilText
                    when (outputExtension /= ".il") $
                      ilasm cilFile output
   where cilFile = replaceExtension output "il"
         cilText = pr (assemblyFor ci) ""
         output  = outputFile ci
         outputExtension = takeExtension output
+        writeFileUTF8 f s = BS.writeFile f $ UTF8.fromString s
 
 ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= putStr
