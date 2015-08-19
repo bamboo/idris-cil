@@ -38,7 +38,7 @@ ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= pu
 
 assemblyFor :: CodegenInfo -> Assembly
 assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, nothingType]
-  where asmName  = quoted $ takeBaseName (outputFile ci)
+  where asmName = quoted $ takeBaseName (outputFile ci)
 
 moduleFor :: CodegenInfo -> TypeDef
 moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods []
@@ -164,15 +164,16 @@ cil (SChkCase v alts) = cgCase v alts
 --    ,(FApp C_IntT [FUnknown,FCon C_IntNative],Loc 1)])
 cil (SForeign (FApp returnType _) (FStr qname) args) =
   case parseAssemblyQualifiedName qname of
+    Left  e                                    -> error $ show e
     Right (assemblyName, typeName, methodName) -> do
       mapM_ loadArg args
-      tell [ call [] (foreignTypeToCilType returnType) assemblyName typeName methodName (map cilType args)
+      tell [ call [] cilReturnType assemblyName typeName methodName (map cilType args)
            , boxInt32 ] -- dependent on returnType
-    Left e                                     -> error $ show e
   where loadArg :: (FDesc, LVar) -> CilCodegen ()
         loadArg (FApp t _, Loc i) = tell [ ldarg i
                                          , unbox_any (foreignTypeToCilType t) ]
         cilType (FApp t _, _)     = foreignTypeToCilType t
+        cilReturnType             = foreignTypeToCilType returnType
 
 cil (SApp isTailCall n args) = do
   mapM_ load args
