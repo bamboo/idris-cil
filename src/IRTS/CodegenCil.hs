@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, OverloadedStrings, OverloadedLists #-}
+{-# LANGUAGE RecordWildCards, OverloadedStrings, OverloadedLists, ViewPatterns #-}
 module IRTS.CodegenCil (codegenCil) where
 
 import           Control.Monad.RWS.Strict hiding (local)
@@ -22,7 +22,7 @@ import           Language.Cil
 import qualified Language.Cil as Cil
 
 import           IRTS.Cil.FFI
-import           IRTS.Cil.UnreachableCodeRemoval
+--import           IRTS.Cil.UnreachableCodeRemoval
 
 codegenCil :: CodeGenerator
 codegenCil ci = do writeFileUTF8 cilFile cilText
@@ -38,12 +38,16 @@ ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= putStr
 
 assemblyFor :: CodegenInfo -> Assembly
-assemblyFor ci = Assembly [mscorlibRef] asmName [moduleFor ci, sconType, nothingType]
+assemblyFor ci = Assembly [mscorlibRef] asmName types
   where asmName = quoted $ takeBaseName (outputFile ci)
+        types   = mainModule : runtime ++ exports
+        mainModule = moduleFor ci
+        runtime    = [sconType, nothingType]
+        exports    = exportedTypes ci
 
 moduleFor :: CodegenInfo -> TypeDef
 moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods []
-  where methods       = removeUnreachable $ map method declsWithBody
+  where methods       = map method declsWithBody -- removeUnreachable $ map method declsWithBody
         declsWithBody = filter hasBody decls
         decls         = map snd $ simpleDecls ci
         hasBody (SFun _ _ _ sexp) = someSExp sexp
@@ -80,6 +84,33 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
 
+-- [Export Main.FFI_CIL ""
+--  [ExportFun Main.exportedFunction (FStr "ExportedFunction") (FIO (FCon CIL_Unit)) []
+--  ,ExportFun Main.exportedFunction1 (FStr "") (FCon CIL_Str) [FCon CIL_Bool]]]
+exportedTypes :: CodegenInfo -> [TypeDef]
+exportedTypes ci = map exportedType (exportDecls ci)
+  where exportedType :: ExportIFace -> TypeDef
+        exportedType (Export (NS (UN (T.unpack -> "FFI_CIL")) ns) _ es) =
+            classDef [CaPublic] exportedTypeName noExtends noImplements [] methods []
+          where exportedTypeName = T.unpack $ T.intercalate "." ns
+                methods = defaultCtorDef : map exportedFunction es
+
+exportedFunction :: Export -> MethodDef
+exportedFunction (ExportFun fn@(NS n _) (FStr alias) rt ps) = Method attrs retType exportName parameters body
+  where attrs      = [MaPublic, MaStatic]
+        retType    = foreignTypeToCilType rt
+        exportName = if null alias then cilName n else alias
+        parameters = zipWith param [(0 :: Int)..] paramTypes
+        param i t  = Param Nothing t ("p" ++ show i)
+        paramTypes = map foreignTypeToCilType ps
+        body       = loadArgs ++ [invoke, popBoxOrCast, ret]
+        loadArgs   = concatMap loadArg (zip [0..] paramTypes)
+        loadArg (i, t) = ldarg i : [box t | isValueType t]
+        invoke     = call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps)
+        popBoxOrCast = case retType of
+                         Void -> pop
+                         t | isValueType t -> box t
+                         t -> castclass t
 
 data CodegenState = CodegenState { nextLabel  :: Int
                                  , localCount :: Int }
@@ -168,9 +199,11 @@ cil (SForeign returnType (FStr qname) args) =
   case parseAssemblyQualifiedName qname of
     Right (isInstance, assemblyName, typeName, methodName) -> do
       forM_ args loadArg
-      let signature = if isInstance then drop 1 args else args
-      tell [ call [CcInstance | isInstance]
-               cilReturnType assemblyName typeName methodName (map cilType signature) ]
+      if isInstance
+         then
+          tell [ callvirt cilReturnType assemblyName typeName methodName (map cilType (Prelude.tail args)) ]
+         else
+          tell [ call [] cilReturnType assemblyName typeName methodName (map cilType args) ]
       maybeBox cilReturnType
     Left  e -> error $ show e
   where loadArg :: (FDesc, LVar) -> CilCodegen ()
@@ -196,6 +229,7 @@ maybeBox t =
 
 isValueType :: PrimitiveType -> Bool
 isValueType Int32 = True
+isValueType Bool  = True
 isValueType _     = False
 
 loadSConTag :: CilCodegen ()
@@ -437,17 +471,19 @@ loadNothing = ldsfld Cil.Object "" "Nothing" "Default"
 
 nothingType :: TypeDef
 nothingType = classDef [CaPrivate] className noExtends noImplements
-                    [nothing] [ctor, cctor] []
+                    [nothing] [defaultCtorDef, cctor] []
   where className = "Nothing"
         nothing   = Field [FaStatic, FaPublic] Cil.Object "Default"
         cctor     = Constructor [MaStatic] Void []
                       [ newobj "" className []
                       , stsfld Cil.Object "" className "Default"
                       , ret ]
-        ctor      = Constructor [MaPublic] Void []
-                      [ ldarg 0
-                      , call [CcInstance] Void "" "object" ".ctor" []
-                      , ret ]
+
+defaultCtorDef :: MethodDef
+defaultCtorDef = Constructor [MaPublic] Void []
+                   [ ldarg 0
+                   , call [CcInstance] Void "" "object" ".ctor" []
+                   , ret ]
 
 sconType :: TypeDef
 sconType = classDef [CaPrivate] className noExtends noImplements
