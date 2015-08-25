@@ -84,9 +84,6 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
 
--- [Export Main.FFI_CIL ""
---  [ExportFun Main.exportedFunction (FStr "ExportedFunction") (FIO (FCon CIL_Unit)) []
---  ,ExportFun Main.exportedFunction1 (FStr "") (FCon CIL_Str) [FCon CIL_Bool]]]
 exportedTypes :: CodegenInfo -> [TypeDef]
 exportedTypes ci = map exportedType (exportDecls ci)
   where exportedType :: ExportIFace -> TypeDef
