@@ -1,55 +1,64 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
 module IRTS.Cil.FFI
-       ( parseAssemblyQualifiedName
+       ( parseDescriptor
+       , assemblyNameAndTypeFrom
        , foreignTypeToCilType
        ) where
 
 import           Data.Maybe
 import           Data.Text
-import           Text.ParserCombinators.Parsec
 import qualified Data.HashMap.Strict as HM
 
 import           IRTS.Lang (FDesc(..))
 import           Idris.Core.TT (Name(..))
 import           Language.Cil (PrimitiveType(..))
 
-parseAssemblyQualifiedName :: String -> Either ParseError (Bool, String, String, String)
-parseAssemblyQualifiedName = parse assemblyQualifiedName "foreign name"
+-- mimic Idris FFI here?
+-- type CILTy  = PrimitiveType
+-- type CILSig = [CILTy]
+-- data CILForeign = CILInstance CILTy String CILSig CILTy
+--                 | CILStatic CILTy String CILSig CILTy
+--                 | CILConstructor CILTy CILSig
+--                 | CILExport String CILSig CILTy
+--                 | CILDefault
 
-assemblyQualifiedName :: Parser (Bool, String, String, String)
-assemblyQualifiedName = do
-  maybeInstance <- optionMaybe (string "instance")
-  spaces
-  asm <- assemblyName
-  typeName <- anyChar `manyTill` string "::" <?> "type name"
-  methodName <- many1 anyChar <?> "method name"
-  return (isJust maybeInstance, asm, typeName, methodName)
+parseDescriptor :: FDesc -> (Bool, PrimitiveType, String, [PrimitiveType], PrimitiveType)
+parseDescriptor (FApp (UN (unpack -> "CILStatic")) [declType, FStr fn, sig, retType]) =
+  (False, parseCILTy declType, fn, parseCILSig sig, parseCILTy retType)
+parseDescriptor (FApp (UN (unpack -> "CILInstance")) [declType, FStr fn, sig, retType]) =
+  (True, parseCILTy declType, fn, parseCILSig sig, parseCILTy retType)
+parseDescriptor e = error $ "invalid foreign descriptor: " ++ show e
 
-assemblyName :: Parser String
-assemblyName = do
-  char '['
-  asm <- many (noneOf "]") <?> "assembly name"
-  char ']'
-  return asm
+parseCILTy :: FDesc -> PrimitiveType
+parseCILTy (FApp (UN (unpack -> "CILTyRef")) [FStr assemblyName, FStr typeName]) =
+  ReferenceType assemblyName typeName
+parseCILTy (FCon (UN (unpack -> conName))) =
+  case conName of
+    "CILTyInt32" -> Int32
+    "CILTyStr"   -> String
+    "CILTyBool"  -> Bool
+    "CILTyObj"   -> Object
+    t            -> error $ "unsupported CILTy constructor: " ++ t
+parseCILTy d = error $ "unsupported CILTy descriptor: " ++ show d
 
-qualifiedName :: Parser (String, String)
-qualifiedName = do
-  maybeAssemblyName <- optionMaybe assemblyName
-  typeName <- many1 anyChar
-  return (fromMaybe "mscorlib" maybeAssemblyName, typeName)
-
-parseReferenceType :: String -> PrimitiveType
-parseReferenceType t =
-  case parse qualifiedName "type name" t of
-    Left e -> error $ show e
-    Right (asm, typeName) -> ReferenceType asm typeName
+parseCILSig :: FDesc -> [PrimitiveType]
+parseCILSig (FApp (UN (unpack -> "::")) [_, t, ts]) = parseCILTy t : parseCILSig ts
+parseCILSig (FApp (UN (unpack -> "Nil")) _) = []
+parseCILSig d = error $ "invalid signature: " ++ show d
 
 foreignTypeToCilType :: FDesc -> PrimitiveType
-foreignTypeToCilType (FApp (UN (unpack -> "CIL_RefT")) [FStr qname, _, _]) = parseReferenceType qname
+foreignTypeToCilType (FApp (UN (unpack -> "CIL_AnyT")) args) = error $ show args
 foreignTypeToCilType (FApp t _) = foreignType t
 foreignTypeToCilType (FCon t)   = foreignType t
 foreignTypeToCilType (FIO t)    = foreignTypeToCilType t
+foreignTypeToCilType d          = error $ "invalid type descriptor: " ++ show d
+
+assemblyNameAndTypeFrom :: PrimitiveType -> (String, String)
+assemblyNameAndTypeFrom (ReferenceType assemblyName typeName) = (assemblyName, typeName)
+assemblyNameAndTypeFrom String = ("mscorlib", "System.String")
+assemblyNameAndTypeFrom Object = ("mscorlib", "System.Object")
+assemblyNameAndTypeFrom t = error $ "unsupported assembly name for: " ++ show t
 
 foreignType :: Name -> PrimitiveType
 foreignType (UN typeName) =

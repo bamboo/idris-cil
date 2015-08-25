@@ -96,10 +96,13 @@ exportedTypes ci = map exportedType (exportDecls ci)
                 methods = defaultCtorDef : map exportedFunction es
 
 exportedFunction :: Export -> MethodDef
-exportedFunction (ExportFun fn@(NS n _) (FStr alias) rt ps) = Method attrs retType exportName parameters body
+exportedFunction (ExportFun fn@(NS n _) desc rt ps) = Method attrs retType exportName parameters body
   where attrs      = [MaPublic, MaStatic]
         retType    = foreignTypeToCilType rt
         exportName = if null alias then cilName n else alias
+        alias      = case desc of
+                       FApp (UN (T.unpack -> "CILExport")) (FStr a:_) -> a
+                       _ -> ""
         parameters = zipWith param [(0 :: Int)..] paramTypes
         param i t  = Param Nothing t ("p" ++ show i)
         paramTypes = map foreignTypeToCilType ps
@@ -111,6 +114,7 @@ exportedFunction (ExportFun fn@(NS n _) (FStr alias) rt ps) = Method attrs retTy
                          Void -> pop
                          t | isValueType t -> box t
                          t -> castclass t
+exportedFunction e = error $ "invalid export: " ++ show e
 
 data CodegenState = CodegenState { nextLabel  :: Int
                                  , localCount :: Int }
@@ -195,22 +199,17 @@ cil (SApp isTailCall n args) = do
     else tell [ app ]
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
-cil (SForeign returnType (FStr qname) args) =
-  case parseAssemblyQualifiedName qname of
-    Right (isInstance, assemblyName, typeName, methodName) -> do
-      forM_ args loadArg
-      if isInstance
-         then
-          tell [ callvirt cilReturnType assemblyName typeName methodName (map cilType (Prelude.tail args)) ]
-         else
-          tell [ call [] cilReturnType assemblyName typeName methodName (map cilType args) ]
-      maybeBox cilReturnType
-    Left  e -> error $ show e
-  where loadArg :: (FDesc, LVar) -> CilCodegen ()
-        loadArg (t, Loc i) = do tell [ ldarg i ]
-                                castOrUnbox (foreignTypeToCilType t)
-        cilType (t, _)     = foreignTypeToCilType t
-        cilReturnType      = foreignTypeToCilType returnType
+cil (SForeign _ desc args) = do
+  let (isInstance, declType, fn, sig, retType) = parseDescriptor desc
+  mapM_ loadArg (zip (map snd args) (if isInstance then declType : sig else sig))
+  let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
+  if isInstance
+    then tell [ callvirt retType assemblyName typeName fn sig ]
+    else tell [ call [] retType assemblyName typeName fn sig ]
+  maybeBox retType
+  where loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
+        loadArg (Loc i, t) = do tell [ ldarg i ]
+                                castOrUnbox t
 
 cil e = unsupported "expression" e
 
