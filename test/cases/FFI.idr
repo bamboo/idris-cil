@@ -115,9 +115,8 @@ systemMax =
 
 substring : String -> Int -> Int -> CIL_IO String
 substring this index count =
-  foreign FFI_CIL
+  invoke
     (CILInstance CILTyStr "Substring" [CILTyInt32, CILTyInt32] CILTyStr)
-    (String -> Int -> Int -> CIL_IO String)
     this index count
 
 getExecutingAssembly : CIL_IO Assembly
