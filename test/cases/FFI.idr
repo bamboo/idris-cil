@@ -54,6 +54,29 @@ FFI_CIL = MkFFI CIL_Types CILForeign Type
 CIL_IO : Type -> Type
 CIL_IO a = IO' FFI_CIL a
 
+interpCILTy : CILTy -> Type
+interpCILTy CILTyInt32 = Int
+interpCILTy CILTyStr   = String
+interpCILTy CILTyBool  = Bool
+interpCILTy CILTyVoid  = Unit
+interpCILTy _          = Ptr
+
+interpSig : List CILTy -> CILTy -> Type
+interpSig sig ret = interp sig (interpCILTy ret)
+  where interp : List CILTy -> Type -> Type
+        interp [] r = CIL_IO r
+        interp (x::xs) r = interpCILTy x -> interp xs r
+
+%inline
+interpTy : CILForeign -> Type
+interpTy (CILInstance decl _ sig ret) = interpCILTy decl -> interpSig sig ret
+interpTy (CILStatic   _    _ sig ret) = interpSig sig ret
+interpTy _ = Unit
+
+invoke : (ffi : CILForeign) ->
+         {auto fty : FTy FFI_CIL [] (interpTy ffi)} -> (interpTy ffi)
+invoke ffi = foreign FFI_CIL ffi (interpTy ffi)
+
 exportedIO : CIL_IO ()
 exportedIO = putStrLn "exported!"
 
@@ -87,9 +110,8 @@ MethodInfoT = CILTyRef "mscorlib" "System.Reflection.MethodInfo"
 
 systemMax : Int -> Int -> CIL_IO Int
 systemMax =
-  foreign FFI_CIL
+  invoke
     (CILStatic (CILTyRef "mscorlib" "System.Math") "Max" [CILTyInt32, CILTyInt32] CILTyInt32)
-    (Int -> Int -> CIL_IO Int)
 
 substring : String -> Int -> Int -> CIL_IO String
 substring this index count =
