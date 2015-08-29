@@ -1,7 +1,10 @@
 # idris-cil [![Build Status](https://travis-ci.org/bamboo/idris-cil.png?branch=master)](https://travis-ci.org/bamboo/idris-cil)
 
+A Common Intermediate Language backend for [Idris](http://http://www.idris-lang.org/).
 
-A Common Intermediate Language backend for Idris.
+## Why
+
+Because programmers targeting the CLR deserve a modern pure functional language with dependent types.
 
 ## Building
 
@@ -48,3 +51,19 @@ idris --codegen cil Main.idr -o HelloWorld.il \
 ```
 idris-cil [.ibc] -o <output.(il|exe|dll)>
 ```
+## TODO
+
+* [ ] FFI: arrays
+* [ ] FFI: exception handling
+* [ ] FFI: callbacks/delegates
+* [ ] FFI: attach custom attributes to exported functions
+* [x] FFI: invoke instance methods
+* [x] FFI: instantiate objects
+* [x] FFI: invoke static methods
+* [x] FFI: export functions as static methods
+* [ ] primitives: many more
+* [ ] primitives: Float
+* [ ] primitives: proper support for integers
+* [x] primitives: String
+* [x] Tail calls
+* [x] ADTs
