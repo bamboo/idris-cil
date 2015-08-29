@@ -1,6 +1,7 @@
 {-
 42
 r
+it works!
 Void VoidFunction()
 System.String exportedBoolToString(Boolean)
 -}
@@ -77,6 +78,10 @@ invoke : (ffi : CILForeign) ->
          {auto fty : FTy FFI_CIL [] (interpTy ffi)} -> (interpTy ffi)
 invoke ffi = foreign FFI_CIL ffi (interpTy ffi)
 
+new : (decl: CILTy) -> (sig: CILSig) ->
+      {auto fty : FTy FFI_CIL [] (interpSig sig decl)} -> (interpSig sig decl)
+new decl sig = foreign FFI_CIL (CILConstructor decl sig) (interpSig sig decl)
+
 exportedIO : CIL_IO ()
 exportedIO = putStrLn "exported!"
 
@@ -144,9 +149,38 @@ toString obj =
     (o -> CIL_IO String)
     obj
 
+
+namespace System.Text.StringBuilder
+  StringBuilderT : CILTy
+  StringBuilderT = CILTyRef "mscorlib" "System.Text.StringBuilder"
+
+  %inline
+  invokeStringBuilder : String -> Ptr -> String -> CIL_IO Ptr
+  invokeStringBuilder fn =
+    invoke (CILInstance StringBuilderT fn [CILTyStr] StringBuilderT)
+
+  Append : Ptr -> String -> CIL_IO Ptr
+  Append = invokeStringBuilder "Append"
+
+  AppendLine : Ptr -> String -> CIL_IO Ptr
+  AppendLine = invokeStringBuilder "AppendLine"
+
+
+namespace System.Console
+  Write : String -> CIL_IO ()
+  Write =
+    invoke (CILStatic (CILTyRef "mscorlib" "System.Console") "Write" [CILTyStr] CILTyVoid)
+
+
 main : CIL_IO ()
 main = do systemMax 42 1 >>= printLn
           substring "idris" 2 1 >>= putStrLn
+
+          sb <- new StringBuilderT []
+          Append sb "it "
+          AppendLine sb "works!"
+          toString sb >>= Write
+
           asm <- getExecutingAssembly
           type <- getType asm "Main" True
           for_ ["VoidFunction", "exportedBoolToString"] $

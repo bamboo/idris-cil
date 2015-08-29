@@ -4,6 +4,7 @@ module IRTS.Cil.FFI
        ( parseDescriptor
        , assemblyNameAndTypeFrom
        , foreignTypeToCilType
+       , CILForeign(..)
        ) where
 
 import           Data.Maybe
@@ -23,11 +24,16 @@ import           Language.Cil (PrimitiveType(..))
 --                 | CILExport String CILSig CILTy
 --                 | CILDefault
 
-parseDescriptor :: FDesc -> (Bool, PrimitiveType, String, [PrimitiveType], PrimitiveType)
+data CILForeign = CILInstance | CILStatic | CILConstructor
+
+parseDescriptor :: FDesc -> (CILForeign, PrimitiveType, String, [PrimitiveType], PrimitiveType)
 parseDescriptor (FApp (UN (unpack -> "CILStatic")) [declType, FStr fn, sig, retType]) =
-  (False, parseCILTy declType, fn, parseCILSig sig, parseCILTy retType)
+  (CILStatic, parseCILTy declType, fn, parseCILSig sig, parseCILTy retType)
 parseDescriptor (FApp (UN (unpack -> "CILInstance")) [declType, FStr fn, sig, retType]) =
-  (True, parseCILTy declType, fn, parseCILSig sig, parseCILTy retType)
+  (CILInstance, parseCILTy declType, fn, parseCILSig sig, parseCILTy retType)
+parseDescriptor (FApp (UN (unpack -> "CILConstructor")) [declType, sig]) =
+  let decl = parseCILTy declType
+  in (CILConstructor, decl, ".ctor", parseCILSig sig, decl)
 parseDescriptor e = error $ "invalid foreign descriptor: " ++ show e
 
 parseCILTy :: FDesc -> PrimitiveType
@@ -39,6 +45,7 @@ parseCILTy (FCon (UN (unpack -> conName))) =
     "CILTyStr"   -> String
     "CILTyBool"  -> Bool
     "CILTyObj"   -> Object
+    "CILTyVoid"  -> Void
     t            -> error $ "unsupported CILTy constructor: " ++ t
 parseCILTy d = error $ "unsupported CILTy descriptor: " ++ show d
 

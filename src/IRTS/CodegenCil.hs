@@ -197,16 +197,23 @@ cil (SApp isTailCall n args) = do
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
 cil (SForeign _ desc args) = do
-  let (isInstance, declType, fn, sig, retType) = parseDescriptor desc
-  mapM_ loadArg (zip (map snd args) (if isInstance then declType : sig else sig))
+  let (ffi, declType, fn, sig, retType) = parseDescriptor desc
+  mapM_ loadArg (zip (map snd args) (if isInstance ffi then declType : sig else sig))
   let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
-  if isInstance
-    then tell [ callvirt retType assemblyName typeName fn sig ]
-    else tell [ call [] retType assemblyName typeName fn sig ]
-  maybeBox retType
-  where loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
-        loadArg (Loc i, t) = do tell [ ldarg i ]
-                                castOrUnbox t
+  case ffi of
+    CILConstructor -> tell [ newobj   assemblyName typeName sig ]
+    CILInstance    -> tell [ callvirt retType assemblyName typeName fn sig ]
+    CILStatic      -> tell [ call []  retType assemblyName typeName fn sig ]
+  acceptBoxOrPush retType
+  where isInstance CILInstance = True
+        isInstance _           = False
+        loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
+        loadArg (loc, t) = do load loc
+                              castOrUnbox t
+        acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
+        acceptBoxOrPush Void = tell [ loadNothing ]
+        acceptBoxOrPush t | isValueType t = tell [ box t ]
+        acceptBoxOrPush _ = return ()
 
 cil e = unsupported "expression" e
 
@@ -217,11 +224,6 @@ castOrUnbox t =
        then unbox_any t
        else castclass t
     ]
-
-maybeBox :: PrimitiveType -> CilCodegen ()
-maybeBox t =
-  when (isValueType t) $
-    tell [ box t ]
 
 isValueType :: PrimitiveType -> Bool
 isValueType Int32 = True
