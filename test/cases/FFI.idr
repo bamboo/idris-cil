@@ -48,7 +48,7 @@ CILSig = List CILTy
 data CILForeign = CILInstance    CILTy String CILSig CILTy
                 | CILStatic      CILTy String CILSig CILTy
                 | CILConstructor CILTy CILSig
-                | CILExport String CILSig CILTy
+                | CILExport      String CILSig CILTy
                 | CILDefault
 
 FFI_CIL : FFI

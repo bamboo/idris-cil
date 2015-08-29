@@ -212,9 +212,9 @@ cil (SForeign _ desc args) = do
         loadArg (loc, t) = do load loc
                               castOrUnbox t
         acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
-        acceptBoxOrPush Void = tell [ loadNothing ]
+        acceptBoxOrPush Void              = tell [ loadNothing ]
         acceptBoxOrPush t | isValueType t = tell [ box t ]
-        acceptBoxOrPush _ = return ()
+        acceptBoxOrPush _                 = return ()
 
 cil e = unsupported "expression" e
 
