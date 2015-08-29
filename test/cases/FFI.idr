@@ -126,32 +126,32 @@ namespace System.Math.Float32
   Max =
     invoke (CILStatic (CILTyRef "mscorlib" "System.Math") "Max" [CILTyFloat32, CILTyFloat32] CILTyFloat32)
 
-substring : String -> Int -> Int -> CIL_IO String
-substring this index count =
+Substring : String -> Int -> Int -> CIL_IO String
+Substring this index count =
   invoke
     (CILInstance CILTyStr "Substring" [CILTyInt32, CILTyInt32] CILTyStr)
     this index count
 
-getExecutingAssembly : CIL_IO Assembly
-getExecutingAssembly =
+GetExecutingAssembly : CIL_IO Assembly
+GetExecutingAssembly =
   foreign FFI_CIL
     (CILStatic AssemblyT "GetExecutingAssembly" [] AssemblyT)
     (CIL_IO Assembly)
 
-getType : Assembly -> String -> Bool -> CIL_IO RuntimeType
-getType =
+GetType : Assembly -> String -> Bool -> CIL_IO RuntimeType
+GetType =
   foreign FFI_CIL
     (CILInstance AssemblyT "GetType" [CILTyStr, CILTyBool] RuntimeTypeT)
     (Assembly -> String -> Bool -> CIL_IO RuntimeType)
 
-getMethod : RuntimeType -> String -> CIL_IO MethodInfo
-getMethod =
+GetMethod : RuntimeType -> String -> CIL_IO MethodInfo
+GetMethod =
   foreign FFI_CIL
     (CILInstance RuntimeTypeT "GetMethod" [CILTyStr] MethodInfoT)
     (RuntimeType -> String -> CIL_IO MethodInfo)
 
-toString : o -> CIL_IO String
-toString obj =
+ToString : o -> CIL_IO String
+ToString obj =
   foreign FFI_CIL
     (CILInstance CILTyObj "ToString" [] CILTyStr)
     (o -> CIL_IO String)
@@ -183,17 +183,17 @@ namespace System.Console
 main : CIL_IO ()
 main = do Max (the Int 42) (the Int 1) >>= printLn
           Max 4.2 1.0 >>= printLn
-          substring "idris" 2 1 >>= putStrLn
+          Substring "idris" 2 1 >>= putStrLn
 
           sb <- new StringBuilderT []
           Append sb "it "
           AppendLine sb "works!"
-          toString sb >>= Write
+          ToString sb >>= Write
 
-          asm <- getExecutingAssembly
-          type <- getType asm "Main" True
+          asm <- GetExecutingAssembly
+          type <- GetType asm "Main" True
           for_ ["VoidFunction", "exportedBoolToString"] $
             showMethod type
   where showMethod : RuntimeType -> String -> CIL_IO ()
-        showMethod t n = do m <- t `getMethod` n
-                            toString m >>= putStrLn
+        showMethod t n = do m <- t `GetMethod` n
+                            ToString m >>= putStrLn
