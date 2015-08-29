@@ -9,6 +9,7 @@ import           Data.DList (DList, fromList, toList, append)
 import           Data.Function (on)
 import           Data.List (partition, sortBy)
 import qualified Data.Text as T
+import           GHC.Float
 import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
 import           System.Process (readProcess)
 
@@ -226,9 +227,10 @@ castOrUnbox t =
     ]
 
 isValueType :: PrimitiveType -> Bool
-isValueType Int32 = True
-isValueType Bool  = True
-isValueType _     = False
+isValueType Float32 = True
+isValueType Int32   = True
+isValueType Bool    = True
+isValueType _       = False
 
 loadSConTag :: CilCodegen ()
 loadSConTag = tell [ castclass (ReferenceType "" "SCon")
@@ -253,6 +255,8 @@ cgConst (BI i)  = tell [ ldc i
                        , boxInt32 ]
 cgConst (Ch c)  = tell [ ldc $ ord c
                        , boxChar ]
+cgConst (Fl d)  = tell [ ldc_r4 (double2Float d)
+                       , boxFloat32 ]
 cgConst c = unsupported "const" c
 {-
   = I Int
@@ -386,10 +390,13 @@ cgOp (LPlus (ATInt _))      args = intOp add args
 cgOp (LMinus (ATInt _))     args = intOp sub args
 cgOp (LEq (ATInt _))        args = intOp ceq args
 cgOp (LSLt (ATInt _))       args = intOp clt args
-cgOp (LIntStr _)            [i]  = do
-  load i
-  tell [ objectToString ]
+cgOp (LIntStr _)            [i]  = primitiveToString i
+cgOp LFloatStr              [f]  = primitiveToString f
 cgOp o _ = unsupported "operation" o
+
+primitiveToString :: LVar -> CilCodegen ()
+primitiveToString p = do load p
+                         tell [ objectToString ]
 
 objectToString :: MethodDecl
 objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
@@ -418,9 +425,10 @@ intOp op args = do
   tell [ op
        , boxInt32 ]
 
-boxInt32, boxChar, boxBoolean :: MethodDecl
-boxInt32 = box Int32
-boxChar = box Char
+boxInt32, boxFloat32, boxChar, boxBoolean :: MethodDecl
+boxInt32   = box Int32
+boxFloat32 = box Float32
+boxChar    = box Char
 boxBoolean = box Bool
 
 loadInt32 :: LVar -> CilCodegen ()

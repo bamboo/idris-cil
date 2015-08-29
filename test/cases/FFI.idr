@@ -1,5 +1,6 @@
 {-
 42
+4.2
 r
 it works!
 Void VoidFunction()
@@ -18,7 +19,7 @@ mutual
 
   data CIL_Types : Type -> Type where
        CIL_Str   : CIL_Types String
-       CIL_Float : CIL_Types Float
+       CIL_Float : CIL_Types Double
        CIL_Ptr   : CIL_Types Ptr
        CIL_Bool  : CIL_Types Bool
        CIL_Unit  : CIL_Types ()
@@ -35,6 +36,7 @@ mutual
 data CILTy = CILTyObj
            | CILTyStr
            | CILTyInt32
+           | CILTyFloat32
            | CILTyBool
            | CILTyVoid
            | CILTyRef String String
@@ -56,11 +58,12 @@ CIL_IO : Type -> Type
 CIL_IO a = IO' FFI_CIL a
 
 interpCILTy : CILTy -> Type
-interpCILTy CILTyInt32 = Int
-interpCILTy CILTyStr   = String
-interpCILTy CILTyBool  = Bool
-interpCILTy CILTyVoid  = Unit
-interpCILTy _          = Ptr
+interpCILTy CILTyInt32   = Int
+interpCILTy CILTyStr     = String
+interpCILTy CILTyBool    = Bool
+interpCILTy CILTyVoid    = Unit
+interpCILTy CILTyFloat32 = Double
+interpCILTy _            = Ptr
 
 interpSig : List CILTy -> CILTy -> Type
 interpSig sig ret = interp sig (interpCILTy ret)
@@ -113,10 +116,15 @@ data MethodInfo = MkMethodInfo
 MethodInfoT : CILTy
 MethodInfoT = CILTyRef "mscorlib" "System.Reflection.MethodInfo"
 
-systemMax : Int -> Int -> CIL_IO Int
-systemMax =
-  invoke
-    (CILStatic (CILTyRef "mscorlib" "System.Math") "Max" [CILTyInt32, CILTyInt32] CILTyInt32)
+namespace System.Math.Int32
+  Max : Int -> Int -> CIL_IO Int
+  Max =
+    invoke (CILStatic (CILTyRef "mscorlib" "System.Math") "Max" [CILTyInt32, CILTyInt32] CILTyInt32)
+
+namespace System.Math.Float32
+  Max : Double -> Double -> CIL_IO Double
+  Max =
+    invoke (CILStatic (CILTyRef "mscorlib" "System.Math") "Max" [CILTyFloat32, CILTyFloat32] CILTyFloat32)
 
 substring : String -> Int -> Int -> CIL_IO String
 substring this index count =
@@ -173,7 +181,8 @@ namespace System.Console
 
 
 main : CIL_IO ()
-main = do systemMax 42 1 >>= printLn
+main = do Max (the Int 42) (the Int 1) >>= printLn
+          Max 4.2 1.0 >>= printLn
           substring "idris" 2 1 >>= putStrLn
 
           sb <- new StringBuilderT []

@@ -41,12 +41,13 @@ parseCILTy (FApp (UN (unpack -> "CILTyRef")) [FStr assemblyName, FStr typeName])
   ReferenceType assemblyName typeName
 parseCILTy (FCon (UN (unpack -> conName))) =
   case conName of
-    "CILTyInt32" -> Int32
-    "CILTyStr"   -> String
-    "CILTyBool"  -> Bool
-    "CILTyObj"   -> Object
-    "CILTyVoid"  -> Void
-    t            -> error $ "unsupported CILTy constructor: " ++ t
+    "CILTyFloat32" -> Float32
+    "CILTyInt32"   -> Int32
+    "CILTyStr"     -> String
+    "CILTyBool"    -> Bool
+    "CILTyObj"     -> Object
+    "CILTyVoid"    -> Void
+    t              -> error $ "unsupported CILTy constructor: " ++ t
 parseCILTy d = error $ "unsupported CILTy descriptor: " ++ show d
 
 parseCILSig :: FDesc -> [PrimitiveType]

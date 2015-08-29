@@ -62,7 +62,7 @@ idris-cil [.ibc] -o <output.(il|exe|dll)>
 * [x] FFI: invoke static methods
 * [x] FFI: export functions as static methods
 * [ ] primitives: many more
-* [ ] primitives: Float
+* [x] primitives: Float
 * [ ] primitives: proper support for integers
 * [x] primitives: String
 * [x] Tail calls
