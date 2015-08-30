@@ -10,7 +10,7 @@ module Main
 
 namespace FFI_CIL
   data Raw : Type -> Type where
-    MkRaw : (x: t) -> FFI_CIL.Raw t
+    MkRaw : (x : t) -> FFI_CIL.Raw t
 
 mutual
   data CIL_IntTypes  : Type -> Type where
@@ -81,7 +81,7 @@ invoke : (ffi : CILForeign) ->
          {auto fty : FTy FFI_CIL [] (interpTy ffi)} -> (interpTy ffi)
 invoke ffi = foreign FFI_CIL ffi (interpTy ffi)
 
-new : (decl: CILTy) -> (sig: CILSig) ->
+new : (decl : CILTy) -> (sig : CILSig) ->
       {auto fty : FTy FFI_CIL [] (interpSig sig decl)} -> (interpSig sig decl)
 new decl sig = foreign FFI_CIL (CILConstructor decl sig) (interpSig sig decl)
 
