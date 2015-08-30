@@ -479,7 +479,7 @@ nothingType :: TypeDef
 nothingType = classDef [CaPrivate] className noExtends noImplements
                     [nothing] [defaultCtorDef, cctor] []
   where className = "Nothing"
-        nothing   = Field [FaStatic, FaPublic] Cil.Object "Default"
+        nothing   = Field [FaStatic, FaPublic, FaInitOnly] Cil.Object "Default"
         cctor     = Constructor [MaStatic] Void []
                       [ newobj "" className []
                       , stsfld Cil.Object "" className "Default"
@@ -495,8 +495,8 @@ sconType :: TypeDef
 sconType = classDef [CaPrivate] className noExtends noImplements
                     [sconTag, sconFields] [sconCtor, sconToString] []
   where className  = "SCon"
-        sconTag    = Field [FaPublic] Int32 "tag"
-        sconFields = Field [FaPublic] array "fields"
+        sconTag    = Field [FaPublic, FaInitOnly] Int32 "tag"
+        sconFields = Field [FaPublic, FaInitOnly] array "fields"
         sconCtor   = Constructor [MaPublic] Void [ Param Nothing Int32 "tag"
                                                  , Param Nothing array "fields" ]
                      [ ldarg 0
