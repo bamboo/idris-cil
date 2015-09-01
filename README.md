@@ -61,9 +61,12 @@ idris-cil [.ibc] -o <output.(il|exe|dll)>
 * [x] FFI: instantiate objects
 * [x] FFI: invoke static methods
 * [x] FFI: export functions as static methods
+* [x] FFI: export functions including foreign types in their signatures
+* [ ] FFI: run IO on exported functions
+* [ ] FFI: deal with `null`
 * [ ] primitives: many more
 * [x] primitives: Float
-* [ ] primitives: proper support for integers
+* [ ] primitives: proper support for all integer types
 * [x] primitives: String
 * [x] Tail calls
 * [x] ADTs
