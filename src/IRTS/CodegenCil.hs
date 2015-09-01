@@ -197,24 +197,29 @@ cil (SApp isTailCall n args) = do
     else tell [ app ]
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
-cil (SForeign _ desc args) = do
-  let (ffi, declType, fn, sig, retType) = parseDescriptor desc
-  mapM_ loadArg (zip (map snd args) (if isInstance ffi then declType : sig else sig))
-  let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
+cil (SForeign retDesc desc args) = do
+  let ffi = parseDescriptor desc
+  mapM_ loadArg (zip (map snd args) sig)
   case ffi of
-    CILConstructor -> tell [ newobj   assemblyName typeName sig ]
-    CILInstance    -> tell [ callvirt retType assemblyName typeName fn sig ]
-    CILStatic      -> tell [ call []  retType assemblyName typeName fn sig ]
+    CILConstructor ->
+      let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
+      in tell [ newobj   assemblyName typeName sig ]
+    CILInstance fn ->
+      let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
+      in tell [ callvirt retType assemblyName typeName fn (Prelude.tail sig) ]
+    CILStatic declType fn ->
+      let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
+      in tell [ call []  retType assemblyName typeName fn sig ]
   acceptBoxOrPush retType
-  where isInstance CILInstance = True
-        isInstance _           = False
-        loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
+  where loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
         loadArg (loc, t) = do load loc
                               castOrUnbox t
         acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
         acceptBoxOrPush Void              = tell [ loadNothing ]
         acceptBoxOrPush t | isValueType t = tell [ box t ]
         acceptBoxOrPush _                 = return ()
+        sig                               = map (foreignTypeToCilType . fst) args
+        retType                           = foreignTypeToCilType retDesc
 
 cil e = unsupported "expression" e
 
