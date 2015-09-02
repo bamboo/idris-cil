@@ -53,7 +53,7 @@ idris-cil [.ibc] -o <output.(il|exe|dll)>
 ```
 ## TODO
 
-* [ ] FFI: arrays
+* [ ] FFI: efficient arrays
 * [x] FFI: array types
 * [ ] FFI: exception handling
 * [ ] FFI: callbacks/delegates
