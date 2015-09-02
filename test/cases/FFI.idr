@@ -6,6 +6,9 @@ it works!
 Void VoidFunction()
 System.String exportedBoolToString(Boolean)
 Void showMethod(System.Type, System.String)
+before exported invocation
+exported!
+after exported invocation
 -}
 module Main
 
@@ -14,7 +17,9 @@ data CILTy =
   ||| a foreign reference type
   CILTyRef String String |
   ||| a foreign value type
-  CILTyVal String String
+  CILTyVal String String |
+  ||| a foreign array type
+  CILTyArr CILTy
 
 instance Eq CILTy where
   (CILTyRef ns t) == (CILTyRef ns' t') = ns == ns' && t == t'
@@ -36,7 +41,9 @@ data CILForeign =
   ||| Export a function under the given name.
   CILExport String |
   ||| Export a function under its original name.
-  CILDefault
+  CILDefault |
+  ||| null
+  CILNull
 
 mutual
   data CIL_IntTypes  : Type -> Type where
@@ -75,6 +82,10 @@ new : (ty : Type) ->
 new ty = invoke CILConstructor ty
 
 %inline
+nullRef : CIL_IO Ptr
+nullRef = invoke CILNull (CIL_IO Ptr)
+
+%inline
 corlibTy : String -> CILTy
 corlibTy = CILTyRef "mscorlib"
 
@@ -82,8 +93,11 @@ corlibTy = CILTyRef "mscorlib"
 corlib : String -> Type
 corlib = CIL . corlibTy
 
+ObjectTy : CILTy
+ObjectTy = corlibTy "System.Object"
+
 Object : Type
-Object = corlib "System.Object"
+Object = CIL ObjectTy
 
 AssemblyTy : CILTy
 AssemblyTy = corlibTy "System.Reflection.Assembly"
@@ -96,6 +110,9 @@ RuntimeType = corlib "System.Type"
 
 MethodInfo : Type
 MethodInfo = corlib "System.Reflection.MethodInfo"
+
+ObjectArray : Type
+ObjectArray = CIL (CILTyArr ObjectTy)
 
 -- inheritance can be encoded as class instances or implicit conversions
 class IsA a b where {}
@@ -140,6 +157,12 @@ GetMethod =
   invoke
     (CILInstance "GetMethod")
     (RuntimeType -> String -> CIL_IO MethodInfo)
+
+Invoke : MethodInfo -> Object -> ObjectArray -> CIL_IO Object
+Invoke =
+  invoke
+    (CILInstance "Invoke")
+    (MethodInfo -> Object -> ObjectArray -> CIL_IO Object)
 
 ToString : IsA Object o => o -> CIL_IO String
 ToString obj =
@@ -189,8 +212,14 @@ main = do Max (the Int 42) (the Int 1) >>= printLn
 
           asm <- GetExecutingAssembly
           type <- GetType asm "Main" True
+
           for_ ["VoidFunction", "exportedBoolToString", "showMethod"] $
             showMethod type
+
+          putStrLn "before exported invocation"
+          exportedIO' <- type `GetMethod` "VoidFunction"
+          Invoke exportedIO' (believe_me !nullRef) (believe_me !nullRef)
+          putStrLn "after exported invocation"
 
 exportedIO : CIL_IO ()
 exportedIO = putStrLn "exported!"

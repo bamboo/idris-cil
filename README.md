@@ -54,6 +54,7 @@ idris-cil [.ibc] -o <output.(il|exe|dll)>
 ## TODO
 
 * [ ] FFI: arrays
+* [x] FFI: array types
 * [ ] FFI: exception handling
 * [ ] FFI: callbacks/delegates
 * [ ] FFI: attach custom attributes to exported functions
@@ -62,8 +63,9 @@ idris-cil [.ibc] -o <output.(il|exe|dll)>
 * [x] FFI: invoke static methods
 * [x] FFI: export functions as static methods
 * [x] FFI: export functions including foreign types in their signatures
-* [ ] FFI: run IO on exported functions
-* [ ] FFI: deal with `null`
+* [x] FFI: run IO on exported functions
+* [x] FFI: pass `null` to foreign functions
+* [ ] FFI: deal with `null` (detect null values from foreign invocations immediately)
 * [ ] primitives: many more
 * [x] primitives: Float
 * [ ] primitives: proper support for all integer types

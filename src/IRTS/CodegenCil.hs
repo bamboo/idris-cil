@@ -104,7 +104,10 @@ exportedFunction (ExportFun fn@(NS n _) desc rt ps) = Method attrs retType expor
         parameters = zipWith param [(0 :: Int)..] paramTypes
         param i t  = Param Nothing t ("p" ++ show i)
         paramTypes = map foreignTypeToCilType ps
-        body       = loadArgs ++ [invoke, popBoxOrCast, ret]
+        body       = if isIO rt
+                        then loadNothing : loadArgs ++ [invoke, runIO, popBoxOrCast, ret]
+                        else loadArgs ++ [invoke, popBoxOrCast, ret]
+        runIO      = call [] Cil.Object "" moduleName "run__IO" [Cil.Object, Cil.Object]
         loadArgs   = concatMap loadArg (zip [0..] paramTypes)
         loadArg (i, t) = ldarg i : [box t | isValueType t]
         invoke     = call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps)
@@ -197,21 +200,23 @@ cil (SApp isTailCall n args) = do
     else tell [ app ]
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
-cil (SForeign retDesc desc args) = do
-  let ffi = parseDescriptor desc
-  mapM_ loadArg (zip (map snd args) sig)
-  case ffi of
-    CILConstructor ->
-      let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
-      in tell [ newobj   assemblyName typeName sig ]
-    CILInstance fn ->
-      let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
-      in tell [ callvirt retType assemblyName typeName fn (Prelude.tail sig) ]
-    CILStatic declType fn ->
-      let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
-      in tell [ call []  retType assemblyName typeName fn sig ]
-  acceptBoxOrPush retType
-  where loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
+cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
+  where emit :: CILForeign -> CilCodegen ()
+        emit CILNull = tell [ ldnull ]
+        emit ffi     = do
+          mapM_ loadArg (zip (map snd args) sig)
+          case ffi of
+            CILConstructor ->
+              let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
+              in tell [ newobj   assemblyName typeName sig ]
+            CILInstance fn ->
+              let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
+              in tell [ callvirt retType assemblyName typeName fn (Prelude.tail sig) ]
+            CILStatic declType fn ->
+              let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
+              in tell [ call []  retType assemblyName typeName fn sig ]
+          acceptBoxOrPush retType
+        loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
         loadArg (loc, t) = do load loc
                               castOrUnbox t
         acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
