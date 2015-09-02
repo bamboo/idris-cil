@@ -28,7 +28,7 @@ instance Eq CILTy where
 
 ||| A foreign CIL type.
 data CIL   : CILTy -> Type where
-     MkCIL : (ty: CILTy) -> CIL ty
+     MkCIL : (ty : CILTy) -> CIL ty
 
 ||| A foreign descriptor.
 data CILForeign =
