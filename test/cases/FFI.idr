@@ -34,7 +34,7 @@ data CIL   : CILTy -> Type where
 data CILForeign =
   ||| Call the named instance method.
   CILInstance String |
-  ||| Call the named static method call of the given foreign type.
+  ||| Call the named static method of the given foreign type.
   CILStatic CILTy String |
   ||| Call a constructor to instantiate an object.
   CILConstructor |
