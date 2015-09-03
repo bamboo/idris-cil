@@ -82,8 +82,9 @@ new : (ty : Type) ->
 new ty = invoke CILConstructor ty
 
 %inline
-nullRef : CIL_IO Ptr
-nullRef = invoke CILNull (CIL_IO Ptr)
+nullOf : (ty: Type) ->
+         {auto fty : FTy FFI_CIL [] (CIL_IO ty)} -> CIL_IO ty
+nullOf ty = invoke CILNull (CIL_IO ty)
 
 %inline
 corlibTy : String -> CILTy
@@ -218,7 +219,7 @@ main = do Max (the Int 42) (the Int 1) >>= printLn
 
           putStrLn "before exported invocation"
           exportedIO' <- type `GetMethod` "VoidFunction"
-          Invoke exportedIO' (believe_me !nullRef) (believe_me !nullRef)
+          Invoke exportedIO' !(nullOf Object) !(nullOf ObjectArray)
           putStrLn "after exported invocation"
 
 exportedIO : CIL_IO ()
