@@ -53,11 +53,18 @@ idris-cil [.ibc] -o <output.(il|exe|dll)>
 ```
 ## TODO
 
-* [ ] FFI: efficient arrays
-* [x] FFI: array types
+* [ ] FFI: enums
+* [ ] FFI: read static fields
 * [ ] FFI: exception handling
 * [ ] FFI: callbacks/delegates
+* [ ] FFI: efficient arrays
 * [ ] FFI: attach custom attributes to exported functions
+* [ ] FFI: deal with `null` (detect null values from foreign invocations immediately)
+* [ ] primitives: proper support for all integer types
+* [ ] primitives: many more
+* [x] primitives: double multiplication
+* [x] FFI: foreign value types
+* [x] FFI: array types
 * [x] FFI: invoke instance methods
 * [x] FFI: instantiate objects
 * [x] FFI: invoke static methods
@@ -65,10 +72,7 @@ idris-cil [.ibc] -o <output.(il|exe|dll)>
 * [x] FFI: export functions including foreign types in their signatures
 * [x] FFI: run IO on exported functions
 * [x] FFI: pass `null` to foreign functions
-* [ ] FFI: deal with `null` (detect null values from foreign invocations immediately)
-* [ ] primitives: many more
 * [x] primitives: Float
-* [ ] primitives: proper support for all integer types
 * [x] primitives: String
 * [x] Tail calls
 * [x] ADTs
