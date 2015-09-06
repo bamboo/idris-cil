@@ -41,16 +41,10 @@ main = putStrLn "Hello, Idris!"
 Compile it to cil and execute it with mono:
 
 ```
-idris --codegen cil Main.idr -o HelloWorld.il \
-  && ilasm HelloWorld.il \
+idris --codegen cil Main.idr -o HelloWorld.exe \
   && mono HelloWorld.exe
 ```
 
-## Command Line Options
-
-```
-idris-cil [.ibc] -o <output.(il|exe|dll)>
-```
 ## TODO
 
 * [ ] FFI: enums
