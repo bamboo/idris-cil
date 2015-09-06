@@ -401,6 +401,7 @@ cgOp (LMinus (ATInt _))     args = intOp sub args
 cgOp (LEq (ATInt _))        args = intOp ceq args
 cgOp (LSLt (ATInt _))       args = intOp clt args
 cgOp (LIntStr _)            [i]  = primitiveToString i
+cgOp (LTimes ATFloat)       args = floatOp mul args
 cgOp LFloatStr              [f]  = primitiveToString f
 cgOp o _ = unsupported "operation" o
 
@@ -430,19 +431,22 @@ newLabel prefix = do
   return $ prefix ++ show suffix
 
 intOp :: MethodDecl -> [LVar] -> CilCodegen ()
-intOp op args = do
-  forM_ args loadInt32
+intOp = numOp Int32
+
+floatOp :: MethodDecl -> [LVar] -> CilCodegen ()
+floatOp = numOp Float32
+
+numOp :: PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen ()
+numOp t op args = do
+  forM_ args (loadAs t)
   tell [ op
-       , boxInt32 ]
+       , box t ]
 
 boxInt32, boxFloat32, boxChar, boxBoolean :: MethodDecl
 boxInt32   = box Int32
 boxFloat32 = box Float32
 boxChar    = box Char
 boxBoolean = box Bool
-
-loadInt32 :: LVar -> CilCodegen ()
-loadInt32 = loadAs Int32
 
 loadAs :: PrimitiveType -> LVar -> CilCodegen ()
 loadAs valueType l = do

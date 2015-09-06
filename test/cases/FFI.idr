@@ -10,6 +10,7 @@ before exported invocation
 exported!
 after exported invocation
 True
+0.42
 -}
 module Main
 
@@ -139,12 +140,11 @@ namespace System.Math.Float32
   Max : Double -> Double -> CIL_IO Double
   Max = invoke SystemMathMax (Double -> Double -> CIL_IO Double)
 
-Substring : String -> Int -> Int -> CIL_IO String
-Substring this index count =
+Substring : (this : String) -> (index : Int) -> (count : Int) -> CIL_IO String
+Substring =
   invoke
     (CILInstance "Substring")
     (String -> Int -> Int -> CIL_IO String)
-    this index count
 
 GetExecutingAssembly : CIL_IO Assembly
 GetExecutingAssembly =
@@ -239,6 +239,10 @@ testValueType = do
   guid' <- ParseGuid !(ToString guid)
   printLn !(Equals guid guid')
 
+--TODO: move to specific test case file
+testDoubleMultiplication : CIL_IO ()
+testDoubleMultiplication = printLn (0.84 * !(Max 0.1 0.5))
+
 main : CIL_IO ()
 main = do Max (the Int 42) (the Int 1) >>= printLn
           Max 4.2 1.0 >>= printLn
@@ -262,6 +266,9 @@ main = do Max (the Int 42) (the Int 1) >>= printLn
 
           testValueType
 
+          testDoubleMultiplication
+
+
 exportedIO : CIL_IO ()
 exportedIO = putStrLn "exported!"
 
@@ -270,7 +277,7 @@ exportedBoolToString = show
 
 exports : FFI_Export FFI_CIL "TheExports" [] -- declare exported functions on a type with given name
 exports =
-  Fun exportedIO (CILExport "VoidFunction") $ -- export function with custom signature
-  Fun exportedBoolToString CILDefault $ -- export function under original name and signature
+  Fun exportedIO (CILExport "VoidFunction") $ -- export function under custom name
+  Fun exportedBoolToString CILDefault $ -- export function under original name
   Fun showMethod CILDefault -- export signature containing CIL type
   End
