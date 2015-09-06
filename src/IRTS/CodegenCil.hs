@@ -236,6 +236,7 @@ castOrUnbox t =
     ]
 
 isValueType :: PrimitiveType -> Bool
+isValueType (ValueType _ _) = True
 isValueType Float32 = True
 isValueType Int32   = True
 isValueType Bool    = True

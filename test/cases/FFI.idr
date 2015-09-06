@@ -9,6 +9,7 @@ Void showMethod(System.Type, System.String)
 before exported invocation
 exported!
 after exported invocation
+True
 -}
 module Main
 
@@ -89,6 +90,10 @@ nullOf ty = invoke CILNull (CIL_IO ty)
 %inline
 corlibTy : String -> CILTy
 corlibTy = CILTyRef "mscorlib"
+
+%inline
+corlibTyVal : String -> CILTy
+corlibTyVal = CILTyVal "mscorlib"
 
 %inline
 corlib : String -> Type
@@ -201,6 +206,39 @@ showMethod : RuntimeType -> String -> CIL_IO ()
 showMethod t n = do m <- t `GetMethod` n
                     ToString m >>= putStrLn
 
+GuidTy : CILTy
+GuidTy = corlibTyVal "System.Guid"
+
+Guid : Type
+Guid = CIL $ GuidTy
+
+instance IsA Object Guid where {}
+
+NewGuid : CIL_IO Guid
+NewGuid =
+  invoke
+    (CILStatic GuidTy "NewGuid")
+    (CIL_IO Guid)
+
+ParseGuid : String -> CIL_IO Guid
+ParseGuid =
+  invoke
+    (CILStatic GuidTy "Parse")
+    (String -> CIL_IO Guid)
+
+Equals : IsA Object a => a -> a -> CIL_IO Bool
+Equals x y =
+  invoke
+    (CILInstance "Equals")
+    (Object -> Object -> CIL_IO Bool)
+    (believe_me x) (believe_me y)
+
+testValueType : CIL_IO ()
+testValueType = do
+  guid  <- NewGuid
+  guid' <- ParseGuid !(ToString guid)
+  printLn !(Equals guid guid')
+
 main : CIL_IO ()
 main = do Max (the Int 42) (the Int 1) >>= printLn
           Max 4.2 1.0 >>= printLn
@@ -221,6 +259,8 @@ main = do Max (the Int 42) (the Int 1) >>= printLn
           exportedIO' <- type `GetMethod` "VoidFunction"
           Invoke exportedIO' !(nullOf Object) !(nullOf ObjectArray)
           putStrLn "after exported invocation"
+
+          testValueType
 
 exportedIO : CIL_IO ()
 exportedIO = putStrLn "exported!"

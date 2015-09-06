@@ -45,6 +45,8 @@ foreignTypeToCilType (FApp (UN (unpack -> "CIL_CILT")) [ty]) = foreignTypeToCilT
 foreignTypeToCilType (FApp (UN (unpack -> "CILTyArr")) [ty]) = Array $ foreignTypeToCilType ty
 foreignTypeToCilType (FApp (UN (unpack -> "CILTyRef"))
                        [FStr assembly, FStr typeName]) = ReferenceType assembly typeName
+foreignTypeToCilType (FApp (UN (unpack -> "CILTyVal"))
+                       [FStr assembly, FStr typeName]) = ValueType assembly typeName
 foreignTypeToCilType (FApp (UN (unpack -> "CIL_IntT")) _) = Int32
 foreignTypeToCilType (FCon t)   = foreignType t
 foreignTypeToCilType (FIO t)    = foreignTypeToCilType t
@@ -52,6 +54,7 @@ foreignTypeToCilType d          = error $ "invalid type descriptor: " ++ show d
 
 assemblyNameAndTypeFrom :: PrimitiveType -> (String, String)
 assemblyNameAndTypeFrom (ReferenceType assemblyName typeName) = (assemblyName, typeName)
+assemblyNameAndTypeFrom (ValueType     assemblyName typeName) = (assemblyName, typeName)
 assemblyNameAndTypeFrom String = ("mscorlib", "System.String")
 assemblyNameAndTypeFrom Object = ("mscorlib", "System.Object")
 assemblyNameAndTypeFrom t = error $ "unsupported assembly name for: " ++ show t
