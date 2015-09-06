@@ -212,7 +212,7 @@ main = do Max (the Int 42) (the Int 1) >>= printLn
           ToString sb >>= Write
 
           asm <- GetExecutingAssembly
-          type <- GetType asm "Main" True
+          type <- GetType asm "TheExports" True
 
           for_ ["VoidFunction", "exportedBoolToString", "showMethod"] $
             showMethod type
@@ -228,7 +228,7 @@ exportedIO = putStrLn "exported!"
 exportedBoolToString : Bool -> String
 exportedBoolToString = show
 
-exports : FFI_Export FFI_CIL "" [] -- export under current module's namespace
+exports : FFI_Export FFI_CIL "TheExports" [] -- declare exported functions on a type with given name
 exports =
   Fun exportedIO (CILExport "VoidFunction") $ -- export function with custom signature
   Fun exportedBoolToString CILDefault $ -- export function under original name and signature

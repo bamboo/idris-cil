@@ -88,10 +88,9 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
 exportedTypes :: CodegenInfo -> [TypeDef]
 exportedTypes ci = map exportedType (exportDecls ci)
   where exportedType :: ExportIFace -> TypeDef
-        exportedType (Export (NS (UN (T.unpack -> "FFI_CIL")) ns) _ es) =
+        exportedType (Export (NS (UN (T.unpack -> "FFI_CIL")) _) exportedTypeName es) =
             classDef [CaPublic] exportedTypeName noExtends noImplements [] methods []
-          where exportedTypeName = T.unpack $ T.intercalate "." ns
-                methods = defaultCtorDef : map exportedFunction es
+          where methods = defaultCtorDef : map exportedFunction es
 
 exportedFunction :: Export -> MethodDef
 exportedFunction (ExportFun fn@(NS n _) desc rt ps) = Method attrs retType exportName parameters body
