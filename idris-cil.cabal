@@ -36,7 +36,7 @@ library
                   , utf8-string
                   , parsec >= 3.1.9
 
-executable idris-cil
+executable idris-codegen-cil
   main-is:            Main.hs
   build-depends:      base >= 4.7 && <5
                     , containers
