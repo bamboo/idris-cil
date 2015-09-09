@@ -24,6 +24,7 @@ data CILForeign = CILInstance    String
                 | CILExport      String
                 | CILDefault
                 | CILNull
+                deriving Show
 
 parseDescriptor :: FDesc -> CILForeign
 parseDescriptor (FApp (UN (unpack -> "CILStatic")) [declType, FStr fn]) =
@@ -62,8 +63,12 @@ assemblyNameAndTypeFrom t = error $ "unsupported assembly name for: " ++ show t
 foreignType :: Name -> PrimitiveType
 foreignType (UN typeName) =
   fromMaybe
-    (error $ "Unsupported foreign type: " ++ unpack typeName)
+    (unsupportedForeignType $ unpack typeName)
     (HM.lookup typeName foreignTypes)
+foreignType n = unsupportedForeignType $ show n
+
+unsupportedForeignType :: String -> a
+unsupportedForeignType = error . ("Unsupported foreign type: " ++)
 
 foreignTypes :: HM.HashMap Text PrimitiveType
 foreignTypes = HM.fromList [("CIL_Str",   String)

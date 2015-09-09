@@ -214,6 +214,7 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
             CILStatic declType fn ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
               in tell [ call []  retType assemblyName typeName fn sig ]
+            _ -> error $ "unsupported ffi descriptor: " ++ show ffi
           acceptBoxOrPush retType
         loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
         loadArg (loc, t) = do load loc
