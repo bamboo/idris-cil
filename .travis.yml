@@ -22,5 +22,6 @@ script:
 - cd ../..
 - cd vendor/idris && make && make install
 - cd ../..
+- cd rts && idris --install cil.ipkg && cd ..
 - cabal install --only-dependencies --enable-tests -j2 && cabal configure --enable-tests
 - cabal build && cabal test --show-details=always --test-options="--color"

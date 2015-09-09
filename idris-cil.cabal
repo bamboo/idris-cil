@@ -10,6 +10,8 @@ maintainer:          Rodrigo B. de Oliveira <rbo@acm.org>
 category:            Language
 build-type:          Simple
 extra-source-files:  README.md
+                   , rts/*.ipkg
+                   , rts/CIL/*.idr
 cabal-version:       >=1.18
 
 library
