@@ -2,6 +2,9 @@
 <
 =
 >
+6
+2
+8
 -}
 
 instance Show Ordering where
@@ -16,4 +19,6 @@ l : List (Int, Int)
 l = [(33, 42), (42, 42), (42, 33)]
 
 main : IO ()
-main = traverse_ (uncurry test) l
+main = do
+  traverse_ (uncurry test) l
+  traverse_ (\op => printLn $ 4 `op` 2) [(+), (-), (*)]

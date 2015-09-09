@@ -399,10 +399,14 @@ cgOp LStrTail [v] = do
 cgOp (LSExt ITNative ITBig) [i]  = load i
 cgOp (LPlus (ATInt _))      args = intOp add args
 cgOp (LMinus (ATInt _))     args = intOp sub args
+cgOp (LTimes (ATInt _))     args = intOp mul args
 cgOp (LEq (ATInt _))        args = intOp ceq args
 cgOp (LSLt (ATInt _))       args = intOp clt args
 cgOp (LIntStr _)            [i]  = primitiveToString i
 cgOp (LTimes ATFloat)       args = floatOp mul args
+cgOp (LSDiv ATFloat)        args = floatOp Cil.div args
+cgOp (LPlus ATFloat)        args = floatOp add args
+cgOp (LMinus ATFloat)       args = floatOp sub args
 cgOp LFloatStr              [f]  = primitiveToString f
 cgOp o _ = unsupported "operation" o
 
