@@ -49,7 +49,6 @@ idris --codegen cil Main.idr -o HelloWorld.exe \
 ## TODO
 
 * [ ] FFI: enums
-* [ ] FFI: read static fields
 * [ ] FFI: exception handling
 * [ ] FFI: callbacks/delegates
 * [ ] FFI: efficient arrays
@@ -57,6 +56,7 @@ idris --codegen cil Main.idr -o HelloWorld.exe \
 * [ ] FFI: deal with `null` (detect null values from foreign invocations immediately)
 * [ ] primitives: proper support for all integer types
 * [ ] primitives: many more
+* [x] FFI: read static fields
 * [x] primitives: Double operators
 * [x] FFI: foreign value types
 * [x] FFI: array types

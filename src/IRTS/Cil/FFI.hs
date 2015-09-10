@@ -20,6 +20,7 @@ type CILTy = PrimitiveType
 
 data CILForeign = CILInstance    String
                 | CILStatic      CILTy String
+                | CILStaticField CILTy String
                 | CILConstructor
                 | CILExport      String
                 | CILDefault
@@ -29,6 +30,8 @@ data CILForeign = CILInstance    String
 parseDescriptor :: FDesc -> CILForeign
 parseDescriptor (FApp (UN (unpack -> "CILStatic")) [declType, FStr fn]) =
   CILStatic (foreignTypeToCilType declType) fn
+parseDescriptor (FApp (UN (unpack -> "CILStaticField")) [declType, FStr fn]) =
+  CILStaticField (foreignTypeToCilType declType) fn
 parseDescriptor (FApp (UN (unpack -> "CILInstance")) [FStr fn]) =
   CILInstance fn
 parseDescriptor (FCon (UN (unpack -> "CILConstructor"))) =

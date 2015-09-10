@@ -10,6 +10,7 @@ before exported invocation
 exported!
 after exported invocation
 True
+00000000-0000-0000-0000-000000000000
 -}
 module Main
 
@@ -117,11 +118,19 @@ ParseGuid =
     (CILStatic GuidTy "Parse")
     (String -> CIL_IO Guid)
 
+EmptyGuid : CIL_IO Guid
+EmptyGuid =
+  invoke
+    (CILStaticField GuidTy "Empty")
+    (CIL_IO Guid)
+
 testValueType : CIL_IO ()
 testValueType = do
   guid  <- NewGuid
   guid' <- ParseGuid !(ToString guid)
   printLn !(Equals guid guid')
+  ToString !EmptyGuid >>= putStrLn
+
 
 --TODO: move to specific test case file
 main : CIL_IO ()

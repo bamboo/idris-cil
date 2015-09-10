@@ -24,6 +24,8 @@ data CILForeign =
   CILInstance String |
   ||| Call the named static method of the given foreign type.
   CILStatic CILTy String |
+  ||| Read the value of the named static field of the given foreign type.
+  CILStaticField CILTy String |
   ||| Call a constructor to instantiate an object.
   CILConstructor |
   ||| Export a function under the given name.
