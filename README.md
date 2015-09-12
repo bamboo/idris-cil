@@ -51,15 +51,16 @@ cabal install
 ## TODO
 
 * [ ] FFI: enums
-* [ ] FFI: exception handling
 * [ ] FFI: callbacks/delegates
+* [ ] FFI: exception handling
 * [ ] FFI: efficient arrays
 * [ ] FFI: attach custom attributes to exported functions
 * [ ] FFI: deal with `null` (detect null values from foreign invocations immediately)
 * [ ] primitives: proper support for all integer types
+* [ ] primitives: distinguish between Double and System.Single
 * [ ] primitives: many more
 * [x] FFI: read static fields
-* [x] primitives: Double operators
+* [x] primitives: Float arithmetic
 * [x] FFI: foreign value types
 * [x] FFI: array types
 * [x] FFI: invoke instance methods
