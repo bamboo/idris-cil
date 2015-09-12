@@ -358,6 +358,9 @@ cgOp LWriteStr [_, s] = do
        , call [] Void "mscorlib" "System.Console" "Write" [String]
        , loadNothing ]
 
+cgOp LReadStr [_] =
+  tell [ call [] String "mscorlib" "System.Console" "ReadLine" [] ]
+
 cgOp LStrRev [s] = do
   loadString s
   tell [ callvirt charArray "mscorlib" "System.String" "ToCharArray" []
@@ -412,6 +415,7 @@ cgOp LStrTail [v] = do
 --        , boxBoolean ]
 
 cgOp (LSExt ITNative ITBig) [i]  = load i
+cgOp (LZExt ITNative ITBig) [i]  = load i
 cgOp (LPlus (ATInt _))      args = intOp add args
 cgOp (LMinus (ATInt _))     args = intOp sub args
 cgOp (LTimes (ATInt _))     args = intOp mul args
@@ -419,6 +423,7 @@ cgOp (LEq (ATInt ITChar))   args = primitiveOp Char Int32 ceq args
 cgOp (LEq (ATInt _))        args = intOp ceq args
 cgOp (LSLt (ATInt _))       args = intOp clt args
 cgOp (LIntStr _)            [i]  = primitiveToString i
+cgOp (LIntFloat ITBig)      [i]  = convert Int32 Float32 "ToSingle" i
 cgOp (LTimes ATFloat)       args = floatOp mul args
 cgOp (LSDiv ATFloat)        args = floatOp Cil.div args
 cgOp (LPlus ATFloat)        args = floatOp add args
@@ -466,6 +471,11 @@ primitiveOp argT resT op args = do
   tell [ op
        , box resT ]
 
+convert :: PrimitiveType -> PrimitiveType -> String -> LVar -> CilCodegen ()
+convert from to fn arg = do
+  loadAs from arg
+  tell [ call [] to "mscorlib" "System.Convert" fn [from]
+       , box to ]
 
 boxInt32, boxFloat32, boxChar, boxBoolean :: MethodDecl
 boxInt32   = box Int32
