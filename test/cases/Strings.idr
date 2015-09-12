@@ -7,6 +7,7 @@ True
 foofoo
 oof
 oof
+Idris
 -}
 module Main
 
@@ -19,3 +20,4 @@ main : IO ()
 main = do
   test "foo" "bar"
   test "foo" "foo"
+  putStrLn $ substr 6 5 "Hello Idris"
