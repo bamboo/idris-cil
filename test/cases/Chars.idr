@@ -1,7 +1,11 @@
 {-
 foo
+bar
+baz
 -}
 module Main
 
 main : IO ()
-main = putStrLn . pack $ ['f', 'o', 'o']
+main = do
+  putStrLn . pack $ ['f', 'o', 'o']
+  for_ (words "bar baz ") putStrLn

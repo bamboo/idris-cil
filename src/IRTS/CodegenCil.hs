@@ -358,6 +358,18 @@ cgOp LWriteStr [_, s] = do
        , call [] Void "mscorlib" "System.Console" "Write" [String]
        , loadNothing ]
 
+cgOp LStrRev [s] = do
+  loadString s
+  tell [ callvirt charArray "mscorlib" "System.String" "ToCharArray" []
+       , dup
+       , call [] Void "mscorlib" "System.Array" "Reverse" [ReferenceType "mscorlib" "System.Array"]
+       , newobj "mscorlib" "System.String" [charArray] ]
+
+cgOp LStrLen [s] = do
+  loadString s
+  tell [ callvirt Int32 "mscorlib" "System.String" "get_Length" []
+       , boxInt32 ]
+
 cgOp LStrConcat args = do
   forM_ args loadString
   tell [ call [] String "mscorlib" "System.String" "Concat" (map (const String) args) ]
@@ -403,6 +415,7 @@ cgOp (LSExt ITNative ITBig) [i]  = load i
 cgOp (LPlus (ATInt _))      args = intOp add args
 cgOp (LMinus (ATInt _))     args = intOp sub args
 cgOp (LTimes (ATInt _))     args = intOp mul args
+cgOp (LEq (ATInt ITChar))   args = primitiveOp Char Int32 ceq args
 cgOp (LEq (ATInt _))        args = intOp ceq args
 cgOp (LSLt (ATInt _))       args = intOp clt args
 cgOp (LIntStr _)            [i]  = primitiveToString i
@@ -445,10 +458,14 @@ floatOp :: MethodDecl -> [LVar] -> CilCodegen ()
 floatOp = numOp Float32
 
 numOp :: PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen ()
-numOp t op args = do
-  forM_ args (loadAs t)
+numOp t = primitiveOp t t
+
+primitiveOp :: PrimitiveType -> PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen ()
+primitiveOp argT resT op args = do
+  forM_ args (loadAs argT)
   tell [ op
-       , box t ]
+       , box resT ]
+
 
 boxInt32, boxFloat32, boxChar, boxBoolean :: MethodDecl
 boxInt32   = box Int32
@@ -542,8 +559,9 @@ sconType = classDef [CaPrivate] className noExtends noImplements
 sconTypeRef :: PrimitiveType
 sconTypeRef = ReferenceType "" "SCon"
 
-array :: PrimitiveType
+array, charArray :: PrimitiveType
 array = Array Cil.Object
+charArray = Array Char
 
 boolFalse, boolTrue :: Name
 boolFalse = NS (UN "False") ["Bool", "Prelude"]
