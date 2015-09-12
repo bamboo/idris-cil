@@ -84,6 +84,7 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
         removeLastTailCall :: [MethodDecl] -> [MethodDecl]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
+        removeLastTailCall _ = error "Entry point should end in tail call"
 
 exportedTypes :: CodegenInfo -> [TypeDef]
 exportedTypes ci = map exportedType (exportDecls ci)
@@ -91,6 +92,7 @@ exportedTypes ci = map exportedType (exportDecls ci)
         exportedType (Export (NS (UN (T.unpack -> "FFI_CIL")) _) exportedTypeName es) =
             classDef [CaPublic] exportedTypeName noExtends noImplements [] methods []
           where methods = defaultCtorDef : map exportedFunction es
+        exportedType e = error $ "Unsupported Export: " ++ show e
 
 exportedFunction :: Export -> MethodDef
 exportedFunction (ExportFun fn@(NS n _) desc rt ps) = Method attrs retType exportName parameters body
@@ -308,6 +310,7 @@ cgCase v alts | canBuildJumpTable alts = do
         canBuildJumpTable' _ [SDefaultCase _]                         = True
         canBuildJumpTable' _ _                                        = False
         baseTag = let (SConCase _ t _ _ _) = head alts in t
+cgCase _ alts = unsupported "case alternatives" alts
 
 storeLocal :: Int -> CilCodegen ()
 storeLocal i = do
@@ -341,6 +344,7 @@ cgSConCase v (SConCase offset _ _ fs sexp) = do
                                  , ldc f
                                  , ldelem_ref ]
                             storeLocal l
+cgSConCase _ c = unsupported "SConCase" c
 
 cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
 cgAlt end v (l, alt) = do
@@ -503,6 +507,7 @@ load (Loc i) = do
     if li < 0
       then ldarg i
       else ldloc li ]
+load v = unsupported "LVar" v
 
 localIndex :: Offset -> CilCodegen Offset
 localIndex i = do

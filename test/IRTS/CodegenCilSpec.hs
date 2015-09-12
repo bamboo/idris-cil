@@ -72,7 +72,7 @@ compileCodegenInfo input output = do
 codegenInfoFrom :: [FilePath] -> FilePath -> Idris CodegenInfo
 codegenInfoFrom inputs output = do
   elabPrims
-  loadInputs inputs Nothing
+  _ <- loadInputs inputs Nothing
   mainProg <- elabMain
   compile (Via "cil") output (Just mainProg)
 

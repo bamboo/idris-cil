@@ -36,7 +36,7 @@ showUsage = do
 codegenInfoFrom :: Opts -> Idris CodegenInfo
 codegenInfoFrom opts = do
   elabPrims
-  loadInputs (inputs opts) Nothing
+  _ <- loadInputs (inputs opts) Nothing
   mainProg <- elabMain
   compile (Via "cil") (output opts) (Just mainProg)
 
