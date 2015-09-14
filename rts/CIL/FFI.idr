@@ -28,6 +28,8 @@ data CILForeign =
   CILStaticField CILTy String |
   ||| Call a constructor to instantiate an object.
   CILConstructor |
+  ||| Loads the given runtime type.
+  CILTypeOf CILTy |
   ||| Export a function under the given name.
   CILExport String |
   ||| Export a function under its original name.
@@ -99,6 +101,10 @@ ObjectArray = CIL (CILTyArr ObjectTy)
 
 RuntimeType : Type
 RuntimeType = corlib "System.Type"
+
+%inline
+typeOf : CILTy -> CIL_IO RuntimeType
+typeOf t = invoke (CILTypeOf t) (CIL_IO RuntimeType)
 
 -- inheritance can be encoded as class instances or implicit conversions
 class IsA a b where {}

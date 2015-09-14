@@ -204,6 +204,9 @@ cil (SApp isTailCall n args) = do
 cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
   where emit :: CILForeign -> CilCodegen ()
         emit CILNull = tell [ ldnull ]
+        emit (CILTypeOf t) =
+          tell [ ldtoken t
+               , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
         emit ffi     = do
           mapM_ loadArg (zip (map snd args) sig)
           case ffi of
@@ -577,6 +580,12 @@ sconTypeRef = ReferenceType "" "SCon"
 array, charArray :: PrimitiveType
 array = Array Cil.Object
 charArray = Array Char
+
+runtimeType :: PrimitiveType
+runtimeType = ReferenceType "mscorlib" "System.Type"
+
+runtimeTypeHandle :: PrimitiveType
+runtimeTypeHandle = ValueType "mscorlib" "System.RuntimeTypeHandle"
 
 boolFalse, boolTrue :: Name
 boolFalse = NS (UN "False") ["Bool", "Prelude"]

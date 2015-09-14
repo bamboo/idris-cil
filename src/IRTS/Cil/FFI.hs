@@ -25,6 +25,7 @@ data CILForeign = CILInstance    String
                 | CILExport      String
                 | CILDefault
                 | CILNull
+                | CILTypeOf      CILTy
                 deriving Show
 
 parseDescriptor :: FDesc -> CILForeign
@@ -38,6 +39,9 @@ parseDescriptor (FCon (UN (unpack -> "CILConstructor"))) =
   CILConstructor
 parseDescriptor (FCon (UN (unpack -> "CILNull"))) =
   CILNull
+parseDescriptor (FApp (UN (unpack -> "CILTypeOf")) [ty]) =
+  CILTypeOf (foreignTypeToCilType ty)
+
 parseDescriptor e = error $ "invalid foreign descriptor: " ++ show e
 
 isIO :: FDesc -> Bool
