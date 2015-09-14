@@ -106,9 +106,9 @@ exportedFunction (ExportFun fn@(NS n _) desc rt ps) = Method attrs retType expor
         param i t  = Param Nothing t ("p" ++ show i)
         paramTypes = map foreignTypeToCilType ps
         body       = if isIO rt
-                        then loadNothing : loadArgs ++ [invoke, runIO, popBoxOrCast, ret]
+                        then loadNothing : dup : loadArgs ++ [invoke, runIO, popBoxOrCast, ret]
                         else loadArgs ++ [invoke, popBoxOrCast, ret]
-        runIO      = call [] Cil.Object "" moduleName "run__IO" [Cil.Object, Cil.Object]
+        runIO      = call [] Cil.Object "" moduleName "call__IO" [Cil.Object, Cil.Object, Cil.Object]
         loadArgs   = concatMap loadArg (zip [0..] paramTypes)
         loadArg (i, t) = ldarg i : [box t | isValueType t]
         invoke     = call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps)
