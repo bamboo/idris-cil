@@ -6,9 +6,11 @@ it works!
 Void VoidFunction()
 System.String exportedBoolToString(Boolean)
 Void showMethod(System.Type, System.String)
-before exported invocation
+before exportedVoidIO
 exported!
-after exported invocation
+after exportedVoidIO
+exportedBoolToStringIO True
+exportedBoolToStringIO => True
 True
 00000000-0000-0000-0000-000000000000
 -}
@@ -132,7 +134,19 @@ testValueType = do
   ToString !EmptyGuid >>= putStrLn
 
 
---TODO: move to specific test case file
+testExportedVoidFunction : RuntimeType -> CIL_IO ()
+testExportedVoidFunction type = do
+  putStrLn "before exportedVoidIO"
+  exportedVoidIO' <- type `GetMethod` "VoidFunction"
+  ret <- Invoke exportedVoidIO' !(nullOf Object) !(nullOf ObjectArray)
+  putStrLn "after exportedVoidIO"
+
+testExportedBoolToStringIO : RuntimeType -> CIL_IO ()
+testExportedBoolToStringIO type = do
+  exportedBoolToStringIO' <- type `GetMethod` "exportedBoolToStringIO"
+  ret <- Invoke exportedBoolToStringIO' !(nullOf Object) !(fromList [True])
+  putStrLn $ "exportedBoolToStringIO => " ++ !(ToString ret)
+
 main : CIL_IO ()
 main = do
 
@@ -151,23 +165,26 @@ main = do
   for_ ["VoidFunction", "exportedBoolToString", "showMethod"] $
     showMethod type
 
-  putStrLn "before exported invocation"
-  exportedIO' <- type `GetMethod` "VoidFunction"
-  Invoke exportedIO' !(nullOf Object) !(nullOf ObjectArray)
-  putStrLn "after exported invocation"
-
+  testExportedVoidFunction type
+  testExportedBoolToStringIO type
   testValueType
 
 
-exportedIO : CIL_IO ()
-exportedIO = putStrLn "exported!"
+exportedVoidIO : CIL_IO ()
+exportedVoidIO = putStrLn "exported!"
 
 exportedBoolToString : Bool -> String
 exportedBoolToString = show
 
+exportedBoolToStringIO : Bool -> CIL_IO String
+exportedBoolToStringIO b = do
+  putStrLn $ "exportedBoolToStringIO " ++ show b
+  return $ show b
+
 exports : FFI_Export FFI_CIL "TheExports" [] -- declare exported functions on a type with given name
 exports =
-  Fun exportedIO (CILExport "VoidFunction") $ -- export function under custom name
+  Fun exportedVoidIO (CILExport "VoidFunction") $ -- export function under custom name
   Fun exportedBoolToString CILDefault $ -- export function under original name
+  Fun exportedBoolToStringIO CILDefault $ -- export IO with return value
   Fun showMethod CILDefault -- export signature containing CIL type
   End

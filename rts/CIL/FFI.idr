@@ -109,6 +109,9 @@ typeOf t = invoke (CILTypeOf t) (CIL_IO RuntimeType)
 -- inheritance can be encoded as class instances or implicit conversions
 class IsA a b where {}
 
+instance IsA Object Object where {}
+instance IsA Object RuntimeType where {}
+
 ToString : IsA Object o => o -> CIL_IO String
 ToString obj =
   invoke
@@ -122,3 +125,27 @@ Equals x y =
     (CILInstance "Equals")
     (Object -> Object -> CIL_IO Bool)
     (believe_me x) (believe_me y)
+
+ArrayTy : CILTy
+ArrayTy = corlibTy "System.Array"
+
+Array : Type
+Array = CIL ArrayTy
+
+CreateInstance : RuntimeType -> Int -> CIL_IO Array
+CreateInstance =
+  invoke
+    (CILStatic ArrayTy "CreateInstance")
+    (RuntimeType -> Int -> CIL_IO Array)
+
+SetValue : Array -> Object -> Int -> CIL_IO ()
+SetValue =
+  invoke
+    (CILInstance "SetValue")
+    (Array -> Object -> Int -> CIL_IO ())
+
+fromList : List a -> CIL_IO ObjectArray
+fromList [v] = do
+  array <- CreateInstance !(typeOf ObjectTy) 1
+  SetValue array (believe_me v) 0
+  return $ believe_me array
