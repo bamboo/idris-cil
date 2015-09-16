@@ -86,16 +86,25 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
         removeLastTailCall _ = error "Entry point should end in tail call"
 
-exportedTypes :: CodegenInfo -> [TypeDef]
-exportedTypes ci = map exportedType (exportDecls ci)
-  where exportedType :: ExportIFace -> TypeDef
-        exportedType (Export (NS (UN (T.unpack -> "FFI_CIL")) _) exportedTypeName es) =
-            classDef [CaPublic] exportedTypeName noExtends noImplements [] methods []
-          where methods = defaultCtorDef : map exportedFunction es
-        exportedType e = error $ "Unsupported Export: " ++ show e
+data CilExport = CilFun MethodDef
+               | CilType TypeDef
 
-exportedFunction :: Export -> MethodDef
-exportedFunction (ExportFun fn@(NS n _) desc rt ps) = Method attrs retType exportName parameters body
+exportedTypes :: CodegenInfo -> [TypeDef]
+exportedTypes ci = concatMap exports (exportDecls ci)
+  where exports :: ExportIFace -> [TypeDef]
+        exports (Export (NS (UN (T.unpack -> "FFI_CIL")) _) exportedTypeName es) =
+            let cilExports = map cilExport es
+                (cilFuns, cilTypes) = partition isCilFun cilExports
+                methods = map (\(CilFun m) -> m) cilFuns
+                types   = map (\(CilType t) -> t) cilTypes
+            in publicClass exportedTypeName methods : types
+          where isCilFun (CilFun _) = True
+                isCilFun _          = False
+                publicClass name methods = classDef [CaPublic] name noExtends noImplements [] methods []
+        exports e = error $ "Unsupported Export: " ++ show e
+
+cilExport :: Export -> CilExport
+cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun $ Method attrs retType exportName parameters body
   where attrs      = [MaPublic, MaStatic]
         retType    = foreignTypeToCilType rt
         exportName = if null alias then cilName n else alias
@@ -110,13 +119,30 @@ exportedFunction (ExportFun fn@(NS n _) desc rt ps) = Method attrs retType expor
                         else loadArgs ++ [invoke, popBoxOrCast, ret]
         runIO      = call [] Cil.Object "" moduleName "call__IO" [Cil.Object, Cil.Object, Cil.Object]
         loadArgs   = concatMap loadArg (zip [0..] paramTypes)
+        -- Exported data types are encoded as structs with a single `ptr` field
+        loadArg (i, ValueType "" exportedDataType) = [ ldarga i
+                                                     , ldfld Cil.Object "" exportedDataType "ptr" ]
         loadArg (i, t) = ldarg i : [box t | isValueType t]
         invoke     = call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps)
         popBoxOrCast = case retType of
                          Void -> pop
+                         -- Exported data types are encoded as structs with a single `ptr` field
+                         ValueType "" exportedDataType -> newobj "" exportedDataType [Cil.Object]
                          t | isValueType t -> box t
                          t -> castclass t
-exportedFunction e = error $ "invalid export: " ++ show e
+
+cilExport (ExportData (FStr exportedTypeName)) = CilType $ publicStruct exportedTypeName [ptr] [ctor] []
+  where ptr   = Field [FaAssembly, FaInitOnly] Cil.Object "ptr"
+        ctor  = Constructor [MaAssembly] Void [Param Nothing Cil.Object "ptr"]
+                  [ ldarg 0
+                  , ldarg 1
+                  , stfld Cil.Object "" exportedTypeName "ptr"
+                  , ret ]
+
+cilExport e = error $ "invalid export: " ++ show e
+
+publicStruct :: TypeName -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
+publicStruct name = classDef [CaPublic] name (extends "[mscorlib]System.ValueType") noImplements
 
 data CodegenState = CodegenState { nextLabel  :: Int
                                  , localCount :: Int }
@@ -216,6 +242,9 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
             CILInstance fn ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
               in tell [ callvirt retType assemblyName typeName fn (Prelude.tail sig) ]
+            CILInstanceField fn ->
+              let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
+              in tell [ ldfld retType assemblyName typeName fn ]
             CILStatic declType fn ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
               in tell [ call []  retType assemblyName typeName fn sig ]

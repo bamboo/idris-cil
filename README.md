@@ -59,6 +59,8 @@ cabal install
 * [ ] primitives: proper support for all integer types
 * [ ] primitives: distinguish between Double and System.Single
 * [ ] primitives: many more
+* [x] FFI: export custom data types
+* [x] FFI: read instance fields
 * [x] FFI: read static fields
 * [x] primitives: Float arithmetic
 * [x] FFI: foreign value types

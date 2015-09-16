@@ -19,6 +19,7 @@ import           Language.Cil (PrimitiveType(..))
 type CILTy = PrimitiveType
 
 data CILForeign = CILInstance    String
+                | CILInstanceField String
                 | CILStatic      CILTy String
                 | CILStaticField CILTy String
                 | CILConstructor
@@ -35,6 +36,8 @@ parseDescriptor (FApp (UN (unpack -> "CILStaticField")) [declType, FStr fn]) =
   CILStaticField (foreignTypeToCilType declType) fn
 parseDescriptor (FApp (UN (unpack -> "CILInstance")) [FStr fn]) =
   CILInstance fn
+parseDescriptor (FApp (UN (unpack -> "CILInstanceField")) [FStr fn]) =
+  CILInstanceField fn
 parseDescriptor (FCon (UN (unpack -> "CILConstructor"))) =
   CILConstructor
 parseDescriptor (FCon (UN (unpack -> "CILNull"))) =
@@ -58,6 +61,7 @@ foreignTypeToCilType (FApp (UN (unpack -> "CILTyVal"))
 foreignTypeToCilType (FApp (UN (unpack -> "CIL_IntT")) _) = Int32
 foreignTypeToCilType (FCon t)   = foreignType t
 foreignTypeToCilType (FIO t)    = foreignTypeToCilType t
+foreignTypeToCilType (FStr exportedTypeName) = ValueType "" exportedTypeName
 foreignTypeToCilType d          = error $ "invalid type descriptor: " ++ show d
 
 assemblyNameAndTypeFrom :: PrimitiveType -> (String, String)

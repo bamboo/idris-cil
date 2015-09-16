@@ -22,6 +22,8 @@ data CIL   : CILTy -> Type where
 data CILForeign =
   ||| Call the named instance method.
   CILInstance String |
+  ||| Read the value of the named instance field.
+  CILInstanceField String |
   ||| Call the named static method of the given foreign type.
   CILStatic CILTy String |
   ||| Read the value of the named static field of the given foreign type.
@@ -59,7 +61,7 @@ mutual
   --      CIL_FnBase  : CIL_Types t -> CIL_FnTypes t
 
 FFI_CIL : FFI
-FFI_CIL = MkFFI CIL_Types CILForeign Type
+FFI_CIL = MkFFI CIL_Types CILForeign String
 
 CIL_IO : Type -> Type
 CIL_IO a = IO' FFI_CIL a
