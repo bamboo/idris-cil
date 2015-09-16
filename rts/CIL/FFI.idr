@@ -30,7 +30,7 @@ data CILForeign =
   CILStaticField CILTy String |
   ||| Call a constructor to instantiate an object.
   CILConstructor |
-  ||| Loads the given runtime type.
+  ||| Load the given runtime type.
   CILTypeOf CILTy |
   ||| Export a function under the given name.
   CILExport String |
