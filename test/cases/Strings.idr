@@ -7,7 +7,13 @@ True
 foofoo
 oof
 oof
-Idris
+(Hello)
+-}
+{- TODO
+()
+( Idris)
+(s)
+(s!)
 -}
 module Main
 
@@ -16,8 +22,11 @@ test s1 s2 = do printLn $ s1 == s2
                 putStrLn $ s1 ++ s2
                 for_ [s1, s2] $ putStrLn . reverse
 
+testSubstr : (Nat, Nat) -> IO ()
+testSubstr (index, length) = putStrLn $ "(" ++ (substr index length "Hello, Idris!") ++ ")"
+
 main : IO ()
 main = do
   test "foo" "bar"
   test "foo" "foo"
-  putStrLn $ substr 6 5 "Hello Idris"
+  traverse_ testSubstr [(0, 5)] --TODO: , (20, 5), (6, 6), (11, 1), (11, 5)]

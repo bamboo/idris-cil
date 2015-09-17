@@ -419,6 +419,12 @@ cgOp LStrCons [h, t] = do
   loadString t
   tell [ call [] String "mscorlib" "System.String" "Concat" [String, String] ]
 
+cgOp LStrSubstr [index, count, s] = do
+  loadString s
+  loadAs Int32 index
+  loadAs Int32 count
+  tell [ callvirt String "mscorlib" "System.String" "Substring" [Int32, Int32] ]
+
 cgOp LStrEq args = do
   forM_ args loadString
   tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (map (const String) args)
