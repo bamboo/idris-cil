@@ -185,15 +185,15 @@ cil (SCon Nothing t _ fs) = do
 -- ifThenElse
 cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
                     , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue =
-  cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
-    tell [ unbox_any Bool
-         , brtrue thenLabel ]
+  cgIfThenElse v thenAlt elseAlt $
+    \thenLabel -> tell [ unbox_any Bool
+                       , brtrue thenLabel ]
 
 cil (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
-  cgIfThenElse v thenAlt elseAlt $ \thenLabel -> do
-    loadSConTag
-    tell [ ldc tag
-         , beq thenLabel ]
+  cgIfThenElse v thenAlt elseAlt $
+    \thenLabel -> do loadSConTag
+                     tell [ ldc tag
+                          , beq thenLabel ]
 
 -- In some situations idris gives us a SCase with two default clauses
 cil (SCase Shared v [t@SConstCase{}, e@SDefaultCase{}, SDefaultCase{}]) = cil (SCase Shared v [t, e])

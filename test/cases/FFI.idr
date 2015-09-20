@@ -32,27 +32,23 @@ instance IsA Object MethodInfo where {}
 
 GetExecutingAssembly : CIL_IO Assembly
 GetExecutingAssembly =
-  invoke
-    (CILStatic AssemblyTy "GetExecutingAssembly")
-    (CIL_IO Assembly)
+  invoke (CILStatic AssemblyTy "GetExecutingAssembly")
+         (CIL_IO Assembly)
 
 GetType : Assembly -> String -> Bool -> CIL_IO RuntimeType
 GetType =
-  invoke
-    (CILInstance "GetType")
-    (Assembly -> String -> Bool -> CIL_IO RuntimeType)
+  invoke (CILInstance "GetType")
+         (Assembly -> String -> Bool -> CIL_IO RuntimeType)
 
 GetMethod : RuntimeType -> String -> CIL_IO MethodInfo
 GetMethod =
-  invoke
-    (CILInstance "GetMethod")
-    (RuntimeType -> String -> CIL_IO MethodInfo)
+  invoke (CILInstance "GetMethod")
+         (RuntimeType -> String -> CIL_IO MethodInfo)
 
 Invoke : MethodInfo -> Object -> ObjectArray -> CIL_IO Object
 Invoke =
-  invoke
-    (CILInstance "Invoke")
-    (MethodInfo -> Object -> ObjectArray -> CIL_IO Object)
+  invoke (CILInstance "Invoke")
+         (MethodInfo -> Object -> ObjectArray -> CIL_IO Object)
 
 %inline
 SystemMathMax : CILForeign
@@ -74,8 +70,7 @@ namespace System.Text
 
   %inline
   invokeStringBuilder : String -> StringBuilder -> String -> CIL_IO StringBuilder
-  invokeStringBuilder fn =
-    invoke (CILInstance fn) (StringBuilder -> String -> CIL_IO StringBuilder)
+  invokeStringBuilder fn = invoke (CILInstance fn) (StringBuilder -> String -> CIL_IO StringBuilder)
 
   Append : StringBuilder -> String -> CIL_IO StringBuilder
   Append = invokeStringBuilder "Append"
@@ -97,21 +92,18 @@ instance IsA Object Guid where {}
 
 NewGuid : CIL_IO Guid
 NewGuid =
-  invoke
-    (CILStatic GuidTy "NewGuid")
-    (CIL_IO Guid)
+  invoke (CILStatic GuidTy "NewGuid")
+         (CIL_IO Guid)
 
 ParseGuid : String -> CIL_IO Guid
 ParseGuid =
-  invoke
-    (CILStatic GuidTy "Parse")
-    (String -> CIL_IO Guid)
+  invoke (CILStatic GuidTy "Parse")
+         (String -> CIL_IO Guid)
 
 EmptyGuid : CIL_IO Guid
 EmptyGuid =
-  invoke
-    (CILStaticField GuidTy "Empty")
-    (CIL_IO Guid)
+  invoke (CILStaticField GuidTy "Empty")
+         (CIL_IO Guid)
 
 testValueType : CIL_IO ()
 testValueType = do
