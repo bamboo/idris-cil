@@ -210,10 +210,11 @@ cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
                                    _  -> cgCase v (sorted cases ++ defaultCase)
    where sorted = sortBy (compare `on` tag)
          tag (SConCase _ t _ _ _) = t
+         tag (SConstCase (I t) _) = t
          tag c                    = unsupportedCase c
+         caseType SConstCase{}    = True
          caseType SConCase{}      = True
          caseType SDefaultCase{}  = False
-         caseType c               = unsupportedCase c
          unsupportedCase c        = error $ show c ++ " in\n" ++ show e
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
@@ -231,6 +232,9 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
         emit (CILTypeOf t) =
           tell [ ldtoken t
                , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
+        emit (CILEnumValueOf t i) =
+          tell [ ldc i
+               , box t ]
         emit ffi     = do
           mapM_ loadArg (zip (map snd args) sig)
           case ffi of
@@ -323,24 +327,44 @@ cgConst c = unsupported "const" c
 -}
 
 cgCase :: LVar -> [SAlt] -> CilCodegen ()
-cgCase v alts | canBuildJumpTable alts = do
+cgCase v alts@(SConstCase{} : _) = cgSwitchCase v alts loadTag altTag
+  where loadTag = tell [ unbox_any Int32 ]
+        altTag (SConstCase (I t) _) = t
+        altTag alt = error $ "expecting (SConstCase (I t)) got: " ++ show alt
+
+cgCase v alts = cgSwitchCase v alts loadTag altTag
+  where loadTag = loadSConTag
+        altTag (SConCase _ t _ _ _) = t
+        altTag alt = error $ "expecting SConCase got: " ++ show alt
+
+cgSwitchCase :: LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
+cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
   labelPrefix <- newLabel "L"
   let labels = map ((labelPrefix++) . show) [0..(length alts - 1)]
   endLabel <- newLabel "END"
-  load v
-  loadSConTag
+  load val
+  loadTag
   tell [ ldc baseTag
        , sub
        , switch labels ]
-  mapM_ (cgAlt endLabel v) (zip labels alts)
+  mapM_ (cgAlt endLabel val) (zip labels alts)
   tell [ label endLabel ]
-  where canBuildJumpTable (SConCase _ t _ _ _ : xs) = canBuildJumpTable' t xs
-        canBuildJumpTable _                         = False
-        canBuildJumpTable' t (SConCase _ t' _ _ _ : xs) | t' == t + 1 = canBuildJumpTable' t' xs
-        canBuildJumpTable' _ [SDefaultCase _]                         = True
-        canBuildJumpTable' _ _                                        = False
-        baseTag = let (SConCase _ t _ _ _) = head alts in t
-cgCase _ alts = unsupported "case alternatives" alts
+  where canBuildJumpTable (a:as) = canBuildJumpTable' (altTag a) as
+        canBuildJumpTable _      = False
+        canBuildJumpTable' _ [SDefaultCase _]           = True
+        canBuildJumpTable' t (a:as) | altTag a == t + 1 = canBuildJumpTable' (altTag a) as
+        canBuildJumpTable' _ _                          = False
+        baseTag = altTag (head alts)
+cgSwitchCase _ _ _ alts = unsupported "switch case alternatives" alts
+
+cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
+cgAlt end v (l, alt) = do
+  tell [ label l ]
+  cg alt
+  tell [ br end ]
+  where cg (SConstCase _ e) = cil e
+        cg (SDefaultCase e) = cil e
+        cg c                = cgSConCase v c
 
 storeLocal :: Int -> CilCodegen ()
 storeLocal i = do
@@ -375,15 +399,6 @@ cgSConCase v (SConCase offset _ _ fs sexp) = do
                                  , ldelem_ref ]
                             storeLocal l
 cgSConCase _ c = unsupported "SConCase" c
-
-cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
-cgAlt end v (l, alt) = do
-  tell [ label l ]
-  cg alt
-  tell [ br end ]
-  where cg c@(SConCase{})   = cgSConCase v c
-        cg (SDefaultCase e) = cil e
-        cg e                = unsupported "case" e
 
 cgOp :: PrimFn -> [LVar] -> CilCodegen ()
 cgOp LWriteStr [_, s] = do

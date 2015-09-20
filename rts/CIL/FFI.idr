@@ -28,6 +28,8 @@ data CILForeign =
   CILStatic CILTy String |
   ||| Read the value of the named static field of the given foreign type.
   CILStaticField CILTy String |
+  ||| Boxes the integer value given as a string into the given enum type.
+  CILEnumValueOf CILTy String |
   ||| Call a constructor to instantiate an object.
   CILConstructor |
   ||| Load the given runtime type.
@@ -142,3 +144,9 @@ namespace System.Array
     SetValue array (believe_me v) 0
     return $ believe_me array
 
+namespace System.Convert
+  ToInt32 : IsA Object a => a -> CIL_IO Int
+  ToInt32 o =
+    invoke (CILStatic (corlibTy "System.Convert") "ToInt32")
+           (Ptr -> CIL_IO Int)
+           (believe_me o)
