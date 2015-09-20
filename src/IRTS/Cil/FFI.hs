@@ -23,10 +23,9 @@ data CILForeign = CILInstance    String
                 | CILStatic      CILTy String
                 | CILStaticField CILTy String
                 | CILConstructor
+                | CILTypeOf      CILTy
                 | CILExport      String
                 | CILDefault
-                | CILNull
-                | CILTypeOf      CILTy
                 deriving Show
 
 parseDescriptor :: FDesc -> CILForeign
@@ -40,8 +39,6 @@ parseDescriptor (FApp (UN (unpack -> "CILInstanceField")) [FStr fn]) =
   CILInstanceField fn
 parseDescriptor (FCon (UN (unpack -> "CILConstructor"))) =
   CILConstructor
-parseDescriptor (FCon (UN (unpack -> "CILNull"))) =
-  CILNull
 parseDescriptor (FApp (UN (unpack -> "CILTypeOf")) [ty]) =
   CILTypeOf (foreignTypeToCilType ty)
 

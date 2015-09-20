@@ -124,13 +124,13 @@ testExportedVoidFunction : RuntimeType -> CIL_IO ()
 testExportedVoidFunction type = do
   putStrLn "before exportedVoidIO"
   exportedVoidIO' <- type `GetMethod` "VoidFunction"
-  ret <- Invoke exportedVoidIO' !(nullOf Object) !(nullOf ObjectArray)
+  ret <- Invoke exportedVoidIO' (believe_me null) (believe_me null)
   putStrLn "after exportedVoidIO"
 
 testExportedBoolToStringIO : RuntimeType -> CIL_IO ()
 testExportedBoolToStringIO type = do
   exportedBoolToStringIO' <- type `GetMethod` "exportedBoolToStringIO"
-  ret <- Invoke exportedBoolToStringIO' !(nullOf Object) !(fromList [True])
+  ret <- Invoke exportedBoolToStringIO' (believe_me null) !(fromList [True])
   putStrLn $ "exportedBoolToStringIO => " ++ !(ToString ret)
 
 record Person where

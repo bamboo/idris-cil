@@ -35,9 +35,7 @@ data CILForeign =
   ||| Export a function under the given name.
   CILExport String |
   ||| Export a function under its original name.
-  CILDefault |
-  ||| null
-  CILNull
+  CILDefault
 
 mutual
   data CIL_IntTypes  : Type -> Type where
@@ -74,11 +72,6 @@ invoke ffi ty = foreign FFI_CIL ffi ty
 new : (ty : Type) ->
       {auto fty : FTy FFI_CIL [] ty} -> ty
 new ty = invoke CILConstructor ty
-
-%inline
-nullOf : (ty: Type) ->
-         {auto fty : FTy FFI_CIL [] (CIL_IO ty)} -> CIL_IO ty
-nullOf ty = invoke CILNull (CIL_IO ty)
 
 %inline
 corlibTy : String -> CILTy

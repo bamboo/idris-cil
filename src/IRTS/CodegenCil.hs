@@ -53,9 +53,8 @@ moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods
         decls         = map snd $ simpleDecls ci
         hasBody (SFun _ _ _ sexp) = someSExp sexp
         someSExp :: SExp -> Bool
-        someSExp SNothing              = False
-        someSExp (SOp (LExternal _) _) = False
-        someSExp _                     = True
+        someSExp SNothing = False
+        someSExp _        = True
 
 moduleName :: String
 moduleName = "'λΠ'"
@@ -229,7 +228,6 @@ cil (SApp isTailCall n args) = do
 
 cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
   where emit :: CILForeign -> CilCodegen ()
-        emit CILNull = tell [ ldnull ]
         emit (CILTypeOf t) =
           tell [ ldtoken t
                , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
@@ -471,6 +469,7 @@ cgOp (LSDiv ATFloat)        args = floatOp Cil.div args
 cgOp (LPlus ATFloat)        args = floatOp add args
 cgOp (LMinus ATFloat)       args = floatOp sub args
 cgOp LFloatStr              [f]  = primitiveToString f
+cgOp (LExternal nul)        [] | nul == sUN "prim__null" = tell [ ldnull ]
 cgOp o _ = unsupported "operation" o
 
 primitiveToString :: LVar -> CilCodegen ()
