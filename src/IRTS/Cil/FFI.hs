@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ViewPatterns #-}
 module IRTS.Cil.FFI
        ( parseDescriptor
        , assemblyNameAndTypeFrom
@@ -13,7 +12,7 @@ import           Data.Maybe
 import           Data.Text
 
 import           IRTS.Lang (FDesc(..))
-import           Idris.Core.TT (Name(..))
+import           Idris.Core.TT (Name(..), sUN)
 import           Language.Cil (PrimitiveType(..))
 
 type CILTy = PrimitiveType
@@ -29,19 +28,18 @@ data CILForeign = CILInstance    String
                 deriving Show
 
 parseDescriptor :: FDesc -> CILForeign
-parseDescriptor (FApp (UN (unpack -> "CILStatic")) [declType, FStr fn]) =
-  CILStatic (foreignTypeToCilType declType) fn
-parseDescriptor (FApp (UN (unpack -> "CILStaticField")) [declType, FStr fn]) =
-  CILStaticField (foreignTypeToCilType declType) fn
-parseDescriptor (FApp (UN (unpack -> "CILInstance")) [FStr fn]) =
-  CILInstance fn
-parseDescriptor (FApp (UN (unpack -> "CILInstanceField")) [FStr fn]) =
-  CILInstanceField fn
-parseDescriptor (FCon (UN (unpack -> "CILConstructor"))) =
-  CILConstructor
-parseDescriptor (FApp (UN (unpack -> "CILTypeOf")) [ty]) =
-  CILTypeOf (foreignTypeToCilType ty)
-
+parseDescriptor (FApp ffi [declType, FStr fn])
+  | ffi == sUN "CILStatic"        = CILStatic (foreignTypeToCilType declType) fn
+parseDescriptor (FApp ffi [declType, FStr fn])
+  | ffi == sUN "CILStaticField"   = CILStaticField (foreignTypeToCilType declType) fn
+parseDescriptor (FApp ffi [FStr fn])
+  | ffi == sUN "CILInstance"      = CILInstance fn
+parseDescriptor (FApp ffi [FStr fn])
+  | ffi == sUN "CILInstanceField" = CILInstanceField fn
+parseDescriptor (FCon ffi)
+  | ffi == sUN "CILConstructor"   = CILConstructor
+parseDescriptor (FApp ffi [ty])
+  | ffi == sUN "CILTypeOf"        = CILTypeOf (foreignTypeToCilType ty)
 parseDescriptor e = error $ "invalid foreign descriptor: " ++ show e
 
 isIO :: FDesc -> Bool
@@ -49,17 +47,20 @@ isIO (FIO _) = True
 isIO _       = False
 
 foreignTypeToCilType :: FDesc -> PrimitiveType
-foreignTypeToCilType (FApp (UN (unpack -> "CIL_CILT")) [ty]) = foreignTypeToCilType ty
-foreignTypeToCilType (FApp (UN (unpack -> "CILTyArr")) [ty]) = Array $ foreignTypeToCilType ty
-foreignTypeToCilType (FApp (UN (unpack -> "CILTyRef"))
-                       [FStr assembly, FStr typeName]) = ReferenceType assembly typeName
-foreignTypeToCilType (FApp (UN (unpack -> "CILTyVal"))
-                       [FStr assembly, FStr typeName]) = ValueType assembly typeName
-foreignTypeToCilType (FApp (UN (unpack -> "CIL_IntT")) _) = Int32
-foreignTypeToCilType (FCon t)   = foreignType t
-foreignTypeToCilType (FIO t)    = foreignTypeToCilType t
-foreignTypeToCilType (FStr exportedTypeName) = ValueType "" exportedTypeName
-foreignTypeToCilType d          = error $ "invalid type descriptor: " ++ show d
+foreignTypeToCilType (FStr exportedDataType) = ValueType "" exportedDataType
+foreignTypeToCilType (FCon t)                = foreignType t
+foreignTypeToCilType (FIO t)                 = foreignTypeToCilType t
+foreignTypeToCilType (FApp cilTy [ty])
+  | cilTy == sUN "CIL_CILT" = foreignTypeToCilType ty
+foreignTypeToCilType (FApp cilTy [ty])
+  | cilTy == sUN "CILTyArr" = Array $ foreignTypeToCilType ty
+foreignTypeToCilType (FApp cilTy [FStr assembly, FStr typeName])
+  | cilTy == sUN "CILTyRef" = ReferenceType assembly typeName
+foreignTypeToCilType (FApp cilTy [FStr assembly, FStr typeName])
+  | cilTy == sUN "CILTyVal" = ValueType assembly typeName
+foreignTypeToCilType (FApp cilTy _)
+  | cilTy == sUN "CIL_IntT" = Int32
+foreignTypeToCilType d      = error $ "invalid type descriptor: " ++ show d
 
 assemblyNameAndTypeFrom :: PrimitiveType -> (String, String)
 assemblyNameAndTypeFrom (ReferenceType assemblyName typeName) = (assemblyName, typeName)

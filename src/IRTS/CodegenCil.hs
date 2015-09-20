@@ -91,12 +91,12 @@ data CilExport = CilFun MethodDef
 exportedTypes :: CodegenInfo -> [TypeDef]
 exportedTypes ci = concatMap exports (exportDecls ci)
   where exports :: ExportIFace -> [TypeDef]
-        exports (Export (NS (UN (T.unpack -> "FFI_CIL")) _) exportedTypeName es) =
+        exports (Export (NS (UN (T.unpack -> "FFI_CIL")) _) exportedDataType es) =
             let cilExports = map cilExport es
                 (cilFuns, cilTypes) = partition isCilFun cilExports
                 methods = map (\(CilFun m) -> m) cilFuns
                 types   = map (\(CilType t) -> t) cilTypes
-            in publicClass exportedTypeName methods : types
+            in publicClass exportedDataType methods : types
           where isCilFun (CilFun _) = True
                 isCilFun _          = False
                 publicClass name methods = classDef [CaPublic] name noExtends noImplements [] methods []
@@ -130,12 +130,12 @@ cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun $ Method attrs retType exp
                          t | isValueType t -> box t
                          t -> castclass t
 
-cilExport (ExportData (FStr exportedTypeName)) = CilType $ publicStruct exportedTypeName [ptr] [ctor] []
+cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exportedDataType [ptr] [ctor] []
   where ptr   = Field [FaAssembly, FaInitOnly] Cil.Object "ptr"
         ctor  = Constructor [MaAssembly] Void [Param Nothing Cil.Object "ptr"]
                   [ ldarg 0
                   , ldarg 1
-                  , stfld Cil.Object "" exportedTypeName "ptr"
+                  , stfld Cil.Object "" exportedDataType "ptr"
                   , ret ]
 
 cilExport e = error $ "invalid export: " ++ show e
@@ -195,7 +195,7 @@ cil (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
     tell [ ldc tag
          , beq thenLabel ]
 
--- In some situations idris gives us a SCase with two default clauses (as evidenced by idris-game-of-life)
+-- In some situations idris gives us a SCase with two default clauses
 cil (SCase Shared v [t@SConstCase{}, e@SDefaultCase{}, SDefaultCase{}]) = cil (SCase Shared v [t, e])
 
 cil (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
@@ -349,11 +349,11 @@ storeLocal i = do
   where ensureLocal CodegenState{..} = CodegenState nextLabel (max localCount (i + 1))
 
 cgBranchEq :: Const -> String -> CilCodegen ()
+cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
 cgBranchEq (Ch c) target =
   tell [ unbox_any Char
        , ldc $ ord c
        , beq target ]
-cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
 cgBranchEq (I i) target =
   tell [ unbox_any Int32
        , ldc i
