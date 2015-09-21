@@ -127,7 +127,7 @@ cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun $ Method attrs retType exp
                          Void -> pop
                          -- Exported data types are encoded as structs with a single `ptr` field
                          ValueType "" exportedDataType -> newobj "" exportedDataType [Cil.Object]
-                         t | isValueType t -> box t
+                         t | isValueType t -> unbox_any t
                          t -> castclass t
 
 cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exportedDataType [ptr] [ctor] []

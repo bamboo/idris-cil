@@ -14,7 +14,9 @@ exportedBoolToStringIO True
 exportedBoolToStringIO => True
 Alan Kay
 Kay, Alan
+3
 -}
+
 module Main
 
 import CIL.FFI
@@ -186,6 +188,12 @@ showMethod t n = do
   m <- t `GetMethod` n
   ToString m >>= putStrLn
 
+testBoxingUnboxing : RuntimeType -> CIL_IO ()
+testBoxingUnboxing type = do
+  meth <- type `GetMethod` "exportedIncInt"
+  ret <- Invoke meth (believe_me null) !(fromList [2])
+  ToString ret >>= putStrLn
+
 main : CIL_IO ()
 main = do
   testOverloadedStaticMethod
@@ -200,6 +208,7 @@ main = do
   testExportedVoidFunction type
   testExportedBoolToStringIO type
   testExportedRecord
+  testBoxingUnboxing type
 
 -- Exports
 
@@ -217,6 +226,9 @@ exportedBoolToStringIO b = do
   putStrLn $ "exportedBoolToStringIO " ++ show b
   return $ show b
 
+exportedIncInt : Int -> Int
+exportedIncInt i = i + 1
+
 exports : FFI_Export FFI_CIL "TheExports" [] -- declare exported functions on a type with given name
 exports =
   Data Person "Person" $
@@ -226,5 +238,6 @@ exports =
   Fun exportedVoidIO (CILExport "VoidFunction") $ -- export function under custom name
   Fun exportedBoolToString CILDefault $
   Fun exportedBoolToStringIO CILDefault $ -- export IO with return value
+  Fun exportedIncInt CILDefault $ -- pass and get back value type
   Fun showMethod CILDefault -- export signature containing CIL type
   End
