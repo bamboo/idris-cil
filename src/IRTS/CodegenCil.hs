@@ -83,8 +83,8 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
         removeLastTailCall _ = error "Entry point should end in tail call"
 
-data CilExport = CilFun MethodDef
-               | CilType TypeDef
+data CilExport = CilFun  !MethodDef
+               | CilType !TypeDef
 
 exportedTypes :: CodegenInfo -> [TypeDef]
 exportedTypes ci = concatMap exports (exportDecls ci)
@@ -138,14 +138,20 @@ cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exported
 
 cilExport e = error $ "invalid export: " ++ show e
 
+data CodegenInput = CodegenInput !SDecl !Int -- cached param count
 
-data CodegenState = CodegenState { nextLabel  :: Int
-                                 , localCount :: Int }
+data CodegenState = CodegenState { nextLabel  :: !Int
+                                 , localCount :: !Int }
 
-type CilCodegen a = RWS SDecl (DList MethodDecl) CodegenState a
+type CodegenOutput = DList MethodDecl
 
-cilFor :: SDecl -> SExp -> (CodegenState, DList MethodDecl)
-cilFor decl sexp = execRWS (cil sexp) decl (CodegenState 0 0)
+type CilCodegen a = RWS CodegenInput CodegenOutput CodegenState a
+
+cilFor :: SDecl -> SExp -> (CodegenState, CodegenOutput)
+cilFor decl@(SFun _ params _ _) sexp = execRWS (cil sexp)
+                                               (CodegenInput decl paramCount)
+                                               (CodegenState 0 0)
+  where paramCount = length params
 
 cil :: SExp -> CilCodegen ()
 cil (SLet (Loc i) v e) = do
@@ -491,7 +497,7 @@ objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
 
 unsupported :: Show a => String -> a -> CilCodegen ()
 unsupported desc v = do
-  decl <- ask
+  (CodegenInput decl _) <- ask
   throwException $ "Unsupported " ++ desc ++ " `" ++ show v ++ "' in\n" ++ show decl
 
 throwException :: String -> CilCodegen ()
@@ -558,8 +564,8 @@ load v = unsupported "LVar" v
 
 localIndex :: Offset -> CilCodegen Offset
 localIndex i = do
-  (SFun _ ps _ _) <- ask
-  return $ i - length ps
+  (CodegenInput _ paramCount) <- ask
+  return $ i - paramCount
 
 entryPointName :: Name
 entryPointName = MN 0 "runMain"

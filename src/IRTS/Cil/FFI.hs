@@ -17,14 +17,14 @@ import           Language.Cil (PrimitiveType(..))
 
 type CILTy = PrimitiveType
 
-data CILForeign = CILInstance    String
-                | CILInstanceField String
-                | CILStatic      CILTy String
-                | CILStaticField CILTy String
+data CILForeign = CILInstance      !String
+                | CILInstanceField !String
+                | CILStatic        !CILTy !String
+                | CILStaticField   !CILTy !String
                 | CILConstructor
-                | CILTypeOf      CILTy
-                | CILEnumValueOf CILTy Integer
-                | CILExport      String
+                | CILTypeOf        !CILTy
+                | CILEnumValueOf   !CILTy !Integer
+                | CILExport        !String
                 | CILDefault
                 deriving Show
 
