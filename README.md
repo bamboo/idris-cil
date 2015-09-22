@@ -48,32 +48,6 @@ cabal test
 cabal install
 ```
 
-## TODO
+## Contributing
 
-* [ ] FFI: callbacks/delegates
-* [ ] FFI: exception handling
-* [ ] FFI: efficient arrays
-* [ ] FFI: attach custom attributes to exported functions
-* [ ] FFI: deal with `null` (detect null values from foreign invocations immediately)
-* [ ] primitives: distinguish between Double and System.Single
-* [ ] primitives: proper support for all integer types
-* [ ] primitives: many more
-* [ ] FFI: enums represented as other integer types
-* [x] FFI: enums represented as int32 values
-* [x] FFI: export custom data types
-* [x] FFI: read instance fields
-* [x] FFI: read static fields
-* [x] primitives: Float arithmetic
-* [x] FFI: foreign value types
-* [x] FFI: array types
-* [x] FFI: invoke instance methods
-* [x] FFI: instantiate objects
-* [x] FFI: invoke static methods
-* [x] FFI: export functions as static methods
-* [x] FFI: export functions including foreign types in their signatures
-* [x] FFI: run IO on exported functions
-* [x] FFI: pass `null` to foreign functions
-* [x] primitives: Float
-* [x] primitives: String
-* [x] Tail calls
-* [x] ADTs
+Issue reports and PRs are welcome. 
