@@ -51,10 +51,8 @@ moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods
   where methods       = map method declsWithBody -- removeUnreachable $ map method declsWithBody
         declsWithBody = filter hasBody decls
         decls         = map snd $ simpleDecls ci
-        hasBody (SFun _ _ _ sexp) = someSExp sexp
-        someSExp :: SExp -> Bool
-        someSExp SNothing = False
-        someSExp _        = True
+        hasBody (SFun _ _ _ SNothing) = False
+        hasBody _                     = True
 
 moduleName :: String
 moduleName = "'λΠ'"
@@ -131,17 +129,15 @@ cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun $ Method attrs retType exp
                          t -> castclass t
 
 cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exportedDataType [ptr] [ctor] []
-  where ptr   = Field [FaAssembly, FaInitOnly] Cil.Object "ptr"
-        ctor  = Constructor [MaAssembly] Void [Param Nothing Cil.Object "ptr"]
-                  [ ldarg 0
-                  , ldarg 1
-                  , stfld Cil.Object "" exportedDataType "ptr"
-                  , ret ]
+  where ptr  = Field [FaAssembly, FaInitOnly] Cil.Object "ptr"
+        ctor = Constructor [MaAssembly] Void [Param Nothing Cil.Object "ptr"]
+                 [ ldarg 0
+                 , ldarg 1
+                 , stfld Cil.Object "" exportedDataType "ptr"
+                 , ret ]
 
 cilExport e = error $ "invalid export: " ++ show e
 
-publicStruct :: TypeName -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
-publicStruct name = classDef [CaPublic] name (extends "[mscorlib]System.ValueType") noImplements
 
 data CodegenState = CodegenState { nextLabel  :: Int
                                  , localCount :: Int }
@@ -212,9 +208,8 @@ cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
          tag (SConCase _ t _ _ _) = t
          tag (SConstCase (I t) _) = t
          tag c                    = unsupportedCase c
-         caseType SConstCase{}    = True
-         caseType SConCase{}      = True
          caseType SDefaultCase{}  = False
+         caseType _               = True
          unsupportedCase c        = error $ show c ++ " in\n" ++ show e
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
@@ -351,9 +346,9 @@ cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
   tell [ label endLabel ]
   where canBuildJumpTable (a:as) = canBuildJumpTable' (altTag a) as
         canBuildJumpTable _      = False
-        canBuildJumpTable' _ [SDefaultCase _]           = True
-        canBuildJumpTable' t (a:as) | altTag a == t + 1 = canBuildJumpTable' (altTag a) as
-        canBuildJumpTable' _ _                          = False
+        canBuildJumpTable' _ [SDefaultCase _]     = True
+        canBuildJumpTable' t (a:as) | t' == t + 1 = canBuildJumpTable' t' as where t' = altTag a
+        canBuildJumpTable' _ _                    = False
         baseTag = altTag (head alts)
 cgSwitchCase _ _ _ alts = unsupported "switch case alternatives" alts
 
@@ -625,6 +620,9 @@ sconType = classDef [CaPrivate] className noExtends noImplements
 
 sconTypeRef :: PrimitiveType
 sconTypeRef = ReferenceType "" "SCon"
+
+publicStruct :: TypeName -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
+publicStruct name = classDef [CaPublic] name (extends "[mscorlib]System.ValueType") noImplements
 
 array, charArray :: PrimitiveType
 array = Array Cil.Object

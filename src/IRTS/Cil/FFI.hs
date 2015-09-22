@@ -41,7 +41,7 @@ parseDescriptor (FCon ffi)
   | ffi == sUN "CILConstructor"   = CILConstructor
 parseDescriptor (FApp ffi [ty])
   | ffi == sUN "CILTypeOf"        = CILTypeOf (foreignTypeToCilType ty)
-parseDescriptor app@(FApp ffi [ty, FStr i])
+parseDescriptor (FApp ffi [ty, FStr i])
   | ffi == sUN "CILEnumValueOf"   = CILEnumValueOf (foreignTypeToCilType ty) (read i)
 parseDescriptor e = error $ "invalid foreign descriptor: " ++ show e
 
