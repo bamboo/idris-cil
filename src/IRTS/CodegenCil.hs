@@ -455,6 +455,19 @@ cgOp LStrTail [v] = do
   tell [ ldc_i4 1
        , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
 
+cgOp (LStrInt ITNative) [v] = do
+  val <- newLocal Int32 "val"
+  tell [ ldc_i4 0
+       , stlocN val ]
+  loadString v
+  tell [ ldlocaN val
+       , call [] Bool "mscorlib" "System.Int32" "TryParse" [String, ByRef Int32]
+       , pop
+       , ldlocN val
+       , boxInt32 ]
+
+cgOp (LStrInt i) [_] = unsupported "LStrInt" i
+
 -- cgOp (LChInt ITNative) [c] = do
 --   load c
 --   tell [ unbox_any systemChar
@@ -512,6 +525,14 @@ newLabel prefix = do
   (CodegenState suffix locals) <- get
   put (CodegenState (suffix + 1) locals)
   return $ prefix ++ show suffix
+
+newLocal :: PrimitiveType -> String -> CilCodegen String
+newLocal ty prefix = do
+  (CodegenState suffix locals) <- get
+  let name = prefix ++ show locals
+  tell [ localsInit [ Local ty name ] ]
+  put (CodegenState suffix (locals + 1))
+  return $ prefix ++ show locals
 
 intOp :: MethodDecl -> [LVar] -> CilCodegen ()
 intOp = numOp Int32
