@@ -140,7 +140,7 @@ cilExport e = error $ "invalid export: " ++ show e
 
 data CodegenInput = CodegenInput !SDecl !Int -- cached param count
 
-data CodegenState = CodegenState { nextLabel  :: !Int
+data CodegenState = CodegenState { nextSuffix :: !Int
                                  , localCount :: !Int }
 
 type CodegenOutput = DList MethodDecl
@@ -289,8 +289,8 @@ loadSConTag = tell [ castclass (ReferenceType "" "SCon")
 
 cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen ()
 cgIfThenElse v thenAlt elseAlt cgBranch = do
-  thenLabel <- newLabel "THEN"
-  endLabel  <- newLabel "END"
+  thenLabel <- gensym "THEN"
+  endLabel  <- gensym "END"
   load v
   cgBranch thenLabel
   cil elseAlt
@@ -340,9 +340,9 @@ cgCase v alts = cgSwitchCase v alts loadTag altTag
 
 cgSwitchCase :: LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
 cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
-  labelPrefix <- newLabel "L"
+  labelPrefix <- gensym "L"
   let labels = map ((labelPrefix++) . show) [0..(length alts - 1)]
-  endLabel <- newLabel "END"
+  endLabel <- gensym "END"
   load val
   loadTag
   tell [ ldc baseTag
@@ -371,7 +371,7 @@ storeLocal :: Int -> CilCodegen ()
 storeLocal i = do
   tell [ stloc i ]
   modify ensureLocal
-  where ensureLocal CodegenState{..} = CodegenState nextLabel (max localCount (i + 1))
+  where ensureLocal CodegenState{..} = CodegenState nextSuffix (max localCount (i + 1))
 
 cgBranchEq :: Const -> String -> CilCodegen ()
 cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
@@ -456,8 +456,9 @@ cgOp LStrTail [v] = do
        , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
 
 cgOp (LStrInt ITNative) [v] = do
-  val <- newLocal Int32 "val"
-  tell [ ldc_i4 0
+  val <- gensym "val"
+  tell [ localsInit [ Local Int32 val ]
+       , ldc_i4 0
        , stlocN val ]
   loadString v
   tell [ ldlocaN val
@@ -520,19 +521,11 @@ throwException message =
        , throw
        , ldnull ]
 
-newLabel :: String -> CilCodegen String
-newLabel prefix = do
+gensym :: String -> CilCodegen String
+gensym prefix = do
   (CodegenState suffix locals) <- get
   put (CodegenState (suffix + 1) locals)
   return $ prefix ++ show suffix
-
-newLocal :: PrimitiveType -> String -> CilCodegen String
-newLocal ty prefix = do
-  (CodegenState suffix locals) <- get
-  let name = prefix ++ show locals
-  tell [ localsInit [ Local ty name ] ]
-  put (CodegenState suffix (locals + 1))
-  return $ prefix ++ show locals
 
 intOp :: MethodDecl -> [LVar] -> CilCodegen ()
 intOp = numOp Int32
