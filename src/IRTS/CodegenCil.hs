@@ -1,13 +1,18 @@
-{-# LANGUAGE RecordWildCards, OverloadedStrings, OverloadedLists, ViewPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE ViewPatterns #-}
 module IRTS.CodegenCil (codegenCil) where
 
 import           Control.Monad.RWS.Strict hiding (local)
+import           Control.Monad.State.Strict
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
 import           Data.DList (DList, fromList, toList, append)
 import           Data.Function (on)
 import           Data.List (partition, sortBy)
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import           GHC.Float
 import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
@@ -38,18 +43,24 @@ codegenCil ci = do writeFileUTF8 cilFile cilText
 ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= putStr
 
+type DelegateOutput = M.Map ForeignFunctionType MethodDef
+
+type DelegateWriter = State DelegateOutput
+
 assemblyFor :: CodegenInfo -> Assembly
 assemblyFor ci = Assembly [mscorlibRef] asmName types
   where asmName = quoted $ takeBaseName (outputFile ci)
-        types   = mainModule : runtime ++ exports
-        mainModule = moduleFor ci
-        runtime    = [sconType, nothingType]
-        exports    = exportedTypes ci
+        types   = typesFor ci
 
-moduleFor :: CodegenInfo -> TypeDef
-moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods []
-  where methods       = map method declsWithBody -- removeUnreachable $ map method declsWithBody
-        declsWithBody = filter hasBody decls
+typesFor :: CodegenInfo -> [TypeDef]
+typesFor ci =
+  let (mainModule, delegates) = runState (moduleFor ci) M.empty
+  in mainModule : sconType (M.elems delegates) : nothingType : exportedTypes ci
+
+moduleFor :: CodegenInfo -> DelegateWriter TypeDef
+moduleFor ci = do methods <- mapM method declsWithBody
+                  return $ classDef [CaPrivate] moduleName noExtends noImplements [] methods []
+  where declsWithBody = filter hasBody decls
         decls         = map snd $ simpleDecls ci
         hasBody (SFun _ _ _ SNothing) = False
         hasBody _                     = True
@@ -57,24 +68,27 @@ moduleFor ci = classDef [CaPrivate] moduleName noExtends noImplements [] methods
 moduleName :: String
 moduleName = "'λΠ'"
 
-method :: SDecl -> MethodDef
-method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) parameters (toList body)
+method :: SDecl -> DelegateWriter MethodDef
+method decl@(SFun name ps _ sexp) = do
+  delegates <- get
+  let (CodegenState _ lc delegates', cilForSexp) = cilFor delegates decl sexp
+      body = if isEntryPoint
+             then
+               [entryPoint]
+                 `append` locals lc
+                 `append` fromList (removeLastTailCall $ toList cilForSexp)
+                 `append` [pop, ret]
+             else
+               [comment (show decl)]
+                 `append` locals lc
+                 `append` cilForSexp
+                 `append` [ret]
+  put delegates'
+  return $ Method attrs retType (cilName name) parameters (toList body)
   where attrs      = [MaStatic, MaAssembly]
         retType    = if isEntryPoint then Cil.Void else Cil.Object
         parameters = map param ps
         param n    = Param Nothing Cil.Object (cilName n)
-        body       = let (CodegenState _ lc, cilForSexp) = cilFor decl sexp
-                     in if isEntryPoint
-                          then
-                            [entryPoint]
-                              `append` locals lc
-                              `append` fromList (removeLastTailCall $ toList cilForSexp)
-                              `append` [pop, ret]
-                          else
-                            [comment (show decl)]
-                              `append` locals lc
-                              `append` cilForSexp
-                              `append` [ret]
         locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
         local i    = Local Cil.Object ("l" ++ show i)
         isEntryPoint = name == entryPointName
@@ -101,32 +115,17 @@ exportedTypes ci = concatMap exports (exportDecls ci)
         exports e = error $ "Unsupported Export: " ++ show e
 
 cilExport :: Export -> CilExport
-cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun $ Method attrs retType exportName parameters body
-  where attrs      = [MaPublic, MaStatic]
-        retType    = foreignTypeToCilType rt
+cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun f
+  where f          = delegateFunction [MaPublic, MaStatic] retType exportName paramTypes io invocation
         exportName = if null alias then cilName n else alias
         alias      = case desc of
                        FApp (UN (T.unpack -> "CILExport")) (FStr a:_) -> a
                        _ -> ""
-        parameters = zipWith param [(0 :: Int)..] paramTypes
-        param i t  = Param Nothing t ("p" ++ show i)
-        paramTypes = map foreignTypeToCilType ps
-        body       = if isIO rt
-                        then loadNothing : dup : loadArgs ++ [invoke, runIO, popBoxOrCast, ret]
-                        else loadArgs ++ [invoke, popBoxOrCast, ret]
-        runIO      = call [] Cil.Object "" moduleName "call__IO" [Cil.Object, Cil.Object, Cil.Object]
+        invocation = loadArgs ++ [ call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps) ]
         loadArgs   = concatMap loadArg (zip [0..] paramTypes)
-        -- Exported data types are encoded as structs with a single `ptr` field
-        loadArg (i, ValueType "" exportedDataType) = [ ldarga i
-                                                     , ldfld Cil.Object "" exportedDataType "ptr" ]
-        loadArg (i, t) = ldarg i : [box t | isValueType t]
-        invoke     = call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps)
-        popBoxOrCast = case retType of
-                         Void -> pop
-                         -- Exported data types are encoded as structs with a single `ptr` field
-                         ValueType "" exportedDataType -> newobj "" exportedDataType [Cil.Object]
-                         t | isValueType t -> unbox_any t
-                         t -> castclass t
+        paramTypes = map foreignType ps
+        retType    = foreignType rt
+        io         = isIO rt
 
 cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exportedDataType [ptr] [ctor] []
   where ptr  = Field [FaAssembly, FaInitOnly] Cil.Object "ptr"
@@ -138,19 +137,21 @@ cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exported
 
 cilExport e = error $ "invalid export: " ++ show e
 
+
 data CodegenInput = CodegenInput !SDecl !Int -- cached param count
 
 data CodegenState = CodegenState { nextSuffix :: !Int
-                                 , localCount :: !Int }
+                                 , localCount :: !Int
+                                 , delegates  :: !DelegateOutput }
 
 type CodegenOutput = DList MethodDecl
 
 type CilCodegen a = RWS CodegenInput CodegenOutput CodegenState a
 
-cilFor :: SDecl -> SExp -> (CodegenState, CodegenOutput)
-cilFor decl@(SFun _ params _ _) sexp = execRWS (cil sexp)
-                                               (CodegenInput decl paramCount)
-                                               (CodegenState 0 0)
+cilFor :: DelegateOutput -> SDecl -> SExp -> (CodegenState, CodegenOutput)
+cilFor delegates decl@(SFun _ params _ _) sexp = execRWS (cil sexp)
+                                                         (CodegenInput decl paramCount)
+                                                         (CodegenState 0 0 delegates)
   where paramCount = length params
 
 cil :: SExp -> CilCodegen ()
@@ -230,14 +231,15 @@ cil (SApp isTailCall n args) = do
 
 cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
   where emit :: CILForeign -> CilCodegen ()
+        emit (CILDelegate t) =
+          cilDelegate t retDesc args
         emit (CILTypeOf t) =
-          tell [ ldtoken t
-               , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
+          cilTypeOf t
         emit (CILEnumValueOf t i) =
           tell [ ldc i
                , box t ]
         emit ffi     = do
-          mapM_ loadArg (zip (map snd args) sig)
+          mapM_ loadLVar (zip (map snd args) sig)
           case ffi of
             CILConstructor ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
@@ -245,6 +247,9 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
             CILInstance fn ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
               in tell [ callvirt retType assemblyName typeName fn (Prelude.tail sig) ]
+            CILInstanceCustom fn sig' retType' ->
+              let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
+              in tell [ callvirt retType' assemblyName typeName fn sig' ]
             CILInstanceField fn ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
               in tell [ ldfld retType assemblyName typeName fn ]
@@ -256,17 +261,72 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
               in tell [ ldsfld   retType assemblyName typeName fn ]
             _ -> error $ "unsupported ffi descriptor: " ++ show ffi
           acceptBoxOrPush retType
-        loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
-        loadArg (loc, t) = do load loc
-                              castOrUnbox t
+        loadLVar :: (LVar, PrimitiveType) -> CilCodegen ()
+        loadLVar (loc, t) = do load loc
+                               castOrUnbox t
         acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
         acceptBoxOrPush Void              = tell [ loadNothing ]
         acceptBoxOrPush t | isValueType t = tell [ box t ]
         acceptBoxOrPush _                 = return ()
-        sig                               = map (foreignTypeToCilType . fst) args
-        retType                           = foreignTypeToCilType retDesc
+        sig                               = map (foreignType . fst) args
+        retType                           = foreignType retDesc
 
 cil e = unsupported "expression" e
+
+-- Delegates are emitted as instance functions of the general SCon data type
+-- so we can avoid the overhead of an additional closure object at runtime
+cilDelegate :: PrimitiveType -> FDesc -> [(FDesc, LVar)] -> CilCodegen ()
+cilDelegate delegateTy retDesc [(_, fnArg)] = do
+  let fft = parseForeignFunctionType retDesc
+  fn <- delegateMethodFor fft
+  load fnArg
+  let (delegateAsm, delegateTyName) = assemblyNameAndTypeFrom delegateTy
+  let ForeignFunctionType{..} = fft
+  tell [ castclass sconTypeRef
+       , ldftn_instance returnType "" "SCon" fn parameterTypes
+       , newobj delegateAsm delegateTyName [Cil.Object, IntPtr] ]
+cilDelegate _ retDesc _ = unsupported "delegate" retDesc
+
+delegateMethodFor :: ForeignFunctionType -> CilCodegen String
+delegateMethodFor fft = do
+  st@(CodegenState _ _ delegates) <- get
+  case M.lookup fft delegates of
+    Just (Method _ _ fn _ _) ->
+      return fn
+    _ -> do
+      let fn = "delegate" ++ show (M.size delegates)
+      let ForeignFunctionType{..} = fft
+      let invocation = ldarg 0 : concatMap (\arg -> loadArg arg ++ [apply0]) (zip [1..] parameterTypes)
+      let f = delegateFunction [MaAssembly] returnType fn parameterTypes returnTypeIO invocation
+      put $ st { delegates = M.insert fft f delegates }
+      return fn
+  where apply0 = call [] Cil.Object "" moduleName "APPLY0" [Cil.Object, Cil.Object]
+
+cilTypeOf :: PrimitiveType -> CilCodegen ()
+cilTypeOf t = tell [ ldtoken t
+                   , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
+
+delegateFunction :: [MethAttr] -> PrimitiveType -> MethodName -> [PrimitiveType] -> Bool -> [MethodDecl] -> MethodDef
+delegateFunction attrs retType fn paramTypes io invocation = Method attrs retType fn parameters body
+  where parameters = zipWith param [(0 :: Int)..] paramTypes
+        param i t  = Param Nothing t ("p" ++ show i)
+        body       = if io
+                        then loadNothing : dup : invocation ++ [runIO, popBoxOrCast, ret]
+                        else invocation ++ [popBoxOrCast, ret]
+        runIO      = call [] Cil.Object "" moduleName "call__IO" [Cil.Object, Cil.Object, Cil.Object]
+        popBoxOrCast = case retType of
+                         Void -> pop
+                         -- Exported data types are encoded as structs with a single `ptr` field
+                         ValueType "" exportedDataType -> newobj "" exportedDataType [Cil.Object]
+                         t | isValueType t -> unbox_any t
+                         t -> castclass t
+
+
+-- Exported data types are encoded as structs with a single `ptr` field
+loadArg :: (Int, PrimitiveType) -> [MethodDecl]
+loadArg (i, ValueType "" exportedDataType) = [ ldarga i
+                                             , ldfld Cil.Object "" exportedDataType "ptr" ]
+loadArg (i, t) = ldarg i : [box t | isValueType t]
 
 castOrUnbox :: PrimitiveType -> CilCodegen ()
 castOrUnbox t =
@@ -281,6 +341,7 @@ isValueType (ValueType _ _) = True
 isValueType Float32 = True
 isValueType Int32   = True
 isValueType Bool    = True
+isValueType Char    = True
 isValueType _       = False
 
 loadSConTag :: CilCodegen ()
@@ -382,7 +443,7 @@ storeLocal :: Int -> CilCodegen ()
 storeLocal i = do
   tell [ stloc i ]
   modify ensureLocal
-  where ensureLocal CodegenState{..} = CodegenState nextSuffix (max localCount (i + 1))
+  where ensureLocal st@CodegenState{..} = st { localCount = max localCount (i + 1) }
 
 cgBranchEq :: Const -> String -> CilCodegen ()
 cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
@@ -534,8 +595,8 @@ throwException message =
 
 gensym :: String -> CilCodegen String
 gensym prefix = do
-  (CodegenState suffix locals) <- get
-  put (CodegenState (suffix + 1) locals)
+  st@(CodegenState suffix _ _) <- get
+  put $ st { nextSuffix = suffix + 1 }
   return $ prefix ++ show suffix
 
 intOp :: MethodDecl -> [LVar] -> CilCodegen ()
@@ -598,11 +659,13 @@ entryPointName = MN 0 "runMain"
 
 cilName :: Name -> String
 cilName = quoted . T.unpack . showName
-  where showName (NS n ns) = T.intercalate "." . reverse $ showName n : ns
-        showName (UN t)    = t
-        showName (MN i t)  = T.concat [t, T.pack $ show i]
-        showName (SN sn)   = T.pack $ show sn
-        showName e = error $ "Unsupported name `" ++ show e ++ "'"
+
+showName :: Name -> T.Text
+showName (NS n ns) = T.intercalate "." . reverse $ showName n : ns
+showName (UN t)    = t
+showName (MN i t)  = T.concat [t, T.pack $ show i]
+showName (SN sn)   = T.pack $ show sn
+showName e = error $ "Unsupported name `" ++ show e ++ "'"
 
 loadNothing :: MethodDecl
 loadNothing = ldsfld Cil.Object "" "Nothing" "Default"
@@ -623,12 +686,13 @@ defaultCtorDef = Constructor [MaPublic] Void []
                    , call [CcInstance] Void "" "object" ".ctor" []
                    , ret ]
 
-sconType :: TypeDef
-sconType = classDef [CaPrivate] className noExtends noImplements
-                    [sconTag, sconFields] [sconCtor, sconToString] []
+sconType :: [MethodDef] -> TypeDef
+sconType methods = classDef [CaPrivate] className noExtends noImplements
+                            [sconTag, sconFields] allMethods []
   where className  = "SCon"
         sconTag    = Field [FaPublic, FaInitOnly] Int32 "tag"
         sconFields = Field [FaPublic, FaInitOnly] array "fields"
+        allMethods = [sconCtor, sconToString] ++ methods
         sconCtor   = Constructor [MaPublic] Void [ Param Nothing Int32 "tag"
                                                  , Param Nothing array "fields" ]
                      [ ldarg 0

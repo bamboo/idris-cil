@@ -65,8 +65,10 @@ evalIdris istate prog = runExceptT $ evalStateT prog istate
 
 compileCodegenInfo :: String -> String -> IO CodegenInfo
 compileCodegenInfo input output = do
-  Right ci <- evalIdris idrisInit $ codegenInfoFrom [bytecodeFile] output
-  return ci
+  maybeCI <- evalIdris idrisInit $ codegenInfoFrom [bytecodeFile] output
+  case maybeCI of
+    Left  e  -> error $ show e
+    Right ci -> return ci
   where bytecodeFile = replaceExtension input "ibc"
 
 codegenInfoFrom :: [FilePath] -> FilePath -> Idris CodegenInfo

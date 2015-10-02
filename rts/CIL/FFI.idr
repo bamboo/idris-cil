@@ -2,6 +2,8 @@ module CIL.FFI
 
 %default total
 
+%access public
+
 ||| The universe of foreign CIL types.
 data CILTy =
   ||| a foreign reference type
@@ -9,13 +11,30 @@ data CILTy =
   ||| a foreign value type
   CILTyVal String String |
   ||| a foreign array type
-  CILTyArr CILTy
+  CILTyArr CILTy |
+  ||| a foreign generic type
+  CILTyGen CILTy (List CILTy) |
+  ||| a foreign generic parameter
+  CILTyGenParam String
 
 instance Eq CILTy where
-  (CILTyRef ns t) == (CILTyRef ns' t') = ns == ns' && t == t'
-  (CILTyVal ns t) == (CILTyVal ns' t') = ns == ns' && t == t'
-  (CILTyArr elTy) == (CILTyArr elTy')  = elTy == elTy'
-  _               == _                 = False
+  (CILTyGen def args) == (CILTyGen def' args') = def  == def' && assert_total (args == args')
+  (CILTyRef as tn)    == (CILTyRef as' tn')    = as   == as'  && tn == tn'
+  (CILTyVal as tn)    == (CILTyVal as' tn')    = as   == as'  && tn == tn'
+  (CILTyArr elTy)     == (CILTyArr elTy')      = elTy == elTy'
+  _                   == _                     = False
+
+%inline
+CILTyObj : CILTy
+CILTyObj = CILTyRef "" "object"
+
+%inline
+CILTyStr : CILTy
+CILTyStr = CILTyRef "" "string"
+
+%inline
+CILTyBool : CILTy
+CILTyBool = CILTyVal "" "bool"
 
 ||| A foreign CIL type.
 data CIL   : CILTy -> Type where
@@ -25,18 +44,22 @@ data CIL   : CILTy -> Type where
 data CILForeign =
   ||| Call the named instance method.
   CILInstance String |
+  ||| Call the named instance method with the given signature.
+  CILInstanceCustom String (List CILTy) CILTy |
   ||| Read the value of the named instance field.
   CILInstanceField String |
   ||| Call the named static method of the given foreign type.
   CILStatic CILTy String |
   ||| Read the value of the named static field of the given foreign type.
   CILStaticField CILTy String |
-  ||| Boxes the integer value given as a string into the given enum type.
+  ||| Box the integer value given as a string into the given enum type.
   CILEnumValueOf CILTy String |
   ||| Call a constructor to instantiate an object.
   CILConstructor |
   ||| Load the given runtime type.
   CILTypeOf CILTy |
+  ||| Convert a function to a delegate of the given type.
+  CILDelegate CILTy |
   ||| Export a function under the given name.
   CILExport String |
   ||| Export a function under its original name.
@@ -55,13 +78,17 @@ mutual
        CIL_Unit  : CIL_Types ()
        CIL_IntT  : CIL_IntTypes i -> CIL_Types i
        CIL_CILT  : CIL_Types (CIL ty)
-  --   CIL_FnT   : CIL_FnTypes a -> CIL_Types (CilFn a)
+       CIL_FnT   : CIL_FnTypes fnT -> CIL_Types (CilFn delegateTy fnT)
 
-  -- data CilFn t = MkCilFn t
-  -- data CIL_FnTypes : Type -> Type where
-  --      CIL_Fn      : CIL_Types s -> CIL_FnTypes t -> CIL_FnTypes (s -> t)
-  --      CIL_FnIO    : CIL_Types t -> CIL_FnTypes (IO' l t)
-  --      CIL_FnBase  : CIL_Types t -> CIL_FnTypes t
+  data CilFn   : CILTy -> Type -> Type where
+       MkCilFn : (delegateTy : CILTy) -> (fn : fnT) -> CilFn delegateTy fnT
+
+  data CIL_FnTypes : Type -> Type where
+       CIL_Fn      : CIL_Types s -> CIL_FnTypes t -> CIL_FnTypes (s -> t)
+       CIL_FnIO    : CIL_Types t -> CIL_FnTypes (IO' l t)
+       CIL_FnBase  : CIL_Types t -> CIL_FnTypes t
+
+%used MkCilFn fn
 
 FFI_CIL : FFI
 FFI_CIL = MkFFI CIL_Types CILForeign String
@@ -69,6 +96,7 @@ FFI_CIL = MkFFI CIL_Types CILForeign String
 CIL_IO : Type -> Type
 CIL_IO a = IO' FFI_CIL a
 
+||| CIL FFI.
 invoke : CILForeign -> (ty : Type) ->
          {auto fty : FTy FFI_CIL [] ty} -> ty
 invoke ffi ty = foreign FFI_CIL ffi ty
@@ -77,6 +105,14 @@ invoke ffi ty = foreign FFI_CIL ffi ty
 new : (ty : Type) ->
       {auto fty : FTy FFI_CIL [] ty} -> ty
 new ty = invoke CILConstructor ty
+
+%inline
+delegate : (ty : CILTy) -> (fnT : Type) -> fnT ->
+           {auto fty : FTy FFI_CIL [] (CilFn ty fnT -> CIL_IO (CilFn ty fnT))} ->
+           CIL_IO (CilFn ty fnT)
+delegate ty fnT fn = invoke (CILDelegate ty)
+                            (CilFn ty fnT -> CIL_IO (CilFn ty fnT))
+                            (MkCilFn ty fn)
 
 %inline
 corlibTy : String -> CILTy
@@ -90,14 +126,11 @@ corlibTyVal = CILTyVal "mscorlib"
 corlib : String -> Type
 corlib = CIL . corlibTy
 
-ObjectTy : CILTy
-ObjectTy = corlibTy "System.Object"
-
 Object : Type
-Object = CIL ObjectTy
+Object = CIL CILTyObj
 
 ObjectArray : Type
-ObjectArray = CIL (CILTyArr ObjectTy)
+ObjectArray = CIL (CILTyArr CILTyObj)
 
 RuntimeType : Type
 RuntimeType = corlib "System.Type"
@@ -144,7 +177,7 @@ namespace System.Array
   partial
   fromList : List a -> CIL_IO ObjectArray
   fromList [v] = do
-    array <- CreateInstance !(typeOf ObjectTy) 1
+    array <- CreateInstance !(typeOf CILTyObj) 1
     SetValue array (believe_me v) 0
     return $ believe_me array
 
