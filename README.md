@@ -22,7 +22,7 @@ Compile it to cil and execute it with mono:
 ```
 idris --codegen cil Main.idr -o HelloWorld.exe \
   && mono HelloWorld.exe
-  ```
+```
 
 The resulting assemblies can also be used with .NET or Unity.
 
@@ -50,4 +50,4 @@ cabal install
 
 ## Contributing
 
-Issue reports and PRs are welcome. 
+Issue reports and PRs are welcome.
