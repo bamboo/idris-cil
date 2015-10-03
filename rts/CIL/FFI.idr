@@ -1,5 +1,7 @@
 module CIL.FFI
 
+%default total
+
 ||| The universe of foreign CIL types.
 data CILTy =
   ||| a foreign reference type
@@ -12,6 +14,7 @@ data CILTy =
 instance Eq CILTy where
   (CILTyRef ns t) == (CILTyRef ns' t') = ns == ns' && t == t'
   (CILTyVal ns t) == (CILTyVal ns' t') = ns == ns' && t == t'
+  (CILTyArr elTy) == (CILTyArr elTy')  = elTy == elTy'
   _               == _                 = False
 
 ||| A foreign CIL type.
@@ -138,6 +141,7 @@ namespace System.Array
     invoke (CILInstance "SetValue")
            (Array -> Object -> Int -> CIL_IO ())
 
+  partial
   fromList : List a -> CIL_IO ObjectArray
   fromList [v] = do
     array <- CreateInstance !(typeOf ObjectTy) 1
