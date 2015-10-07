@@ -63,20 +63,16 @@ method decl@(SFun name ps _ sexp) = Method attrs retType (cilName name) paramete
         retType    = if isEntryPoint then Cil.Void else Cil.Object
         parameters = map param ps
         param n    = Param Nothing Cil.Object (cilName n)
-        body       = let (CodegenState _ lc, cilForSexp) = cilFor decl sexp
+        body       = let (sexpRetType, CodegenState _ lc, cilForSexp) = cilFor decl sexp
                      in if isEntryPoint
                           then
                             [entryPoint]
-                              `append` locals lc
                               `append` fromList (removeLastTailCall $ toList cilForSexp)
                               `append` [pop, ret]
                           else
                             [comment (show decl)]
-                              `append` locals lc
                               `append` cilForSexp
-                              `append` [ret]
-        locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
-        local i    = Local Cil.Object ("l" ++ show i)
+                              `append` (if isValueType sexpRetType then [ box sexpRetType, ret ] else [ ret ])
         isEntryPoint = name == entryPointName
         removeLastTailCall :: [MethodDecl] -> [MethodDecl]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
@@ -140,36 +136,44 @@ cilExport e = error $ "invalid export: " ++ show e
 
 data CodegenInput = CodegenInput !SDecl !Int -- cached param count
 
+type TypedLocal = (Int, (PrimitiveType, String))
 data CodegenState = CodegenState { nextSuffix :: !Int
-                                 , localCount :: !Int }
+                                 , locals :: [TypedLocal] }
 
 type CodegenOutput = DList MethodDecl
 
 type CilCodegen a = RWS CodegenInput CodegenOutput CodegenState a
 
-cilFor :: SDecl -> SExp -> (CodegenState, CodegenOutput)
-cilFor decl@(SFun _ params _ _) sexp = execRWS (cil sexp)
+cilFor :: SDecl -> SExp -> (PrimitiveType, CodegenState, CodegenOutput)
+cilFor decl@(SFun _ params _ _) sexp = runRWS (cil sexp)
                                                (CodegenInput decl paramCount)
-                                               (CodegenState 0 0)
+                                               (CodegenState 0 [])
   where paramCount = length params
 
-cil :: SExp -> CilCodegen ()
+cil :: SExp -> CilCodegen PrimitiveType
 cil (SLet (Loc i) v e) = do
-  case v of
-    SNothing -> tell [ loadNothing ]
+  ty <- case v of
+    SNothing -> do tell [ loadNothing ]
+                   return Cil.Object
     _        -> cil v
-  localIndex i >>= storeLocal
-  cil e
-
+  storeLocal (i, ty)
+  ty <- cil e
+  modify popLocal
+  return ty
+  where popLocal (CodegenState nextSuffix (_:locals)) = CodegenState nextSuffix locals
 cil (SUpdate _ v) = cil v
 cil (SV v)        = load v
 cil (SConst c)    = cgConst c
 cil (SOp op args) = cgOp op args
-cil SNothing      = throwException "SNothing"
+cil SNothing      = do
+  throwException "SNothing"
+  return Cil.Object
 
 -- Special constructors: True, False
-cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
-cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
+cil (SCon _ 0 n []) | n == boolFalse = do tell [ ldc_i4 0 ]
+                                          return Bool
+cil (SCon _ 1 n []) | n == boolTrue  = do tell [ ldc_i4 1 ]
+                                          return Bool
 
 -- General constructors
 cil (SCon Nothing t _ fs) = do
@@ -178,21 +182,22 @@ cil (SCon Nothing t _ fs) = do
        , newarr Cil.Object ]
   mapM_ storeElement (zip [0..] fs)
   tell [ newobj "" "SCon" [Int32, array] ]
+  return Cil.Object
   where storeElement (i, f) = do
           tell [ dup
                , ldc_i4 i ]
-          load f
+          ty <- load f
+          boxIfValueType ty
           tell [ stelem_ref ]
 
 -- ifThenElse
 cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
                     , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue =
-  cgIfThenElse v thenAlt elseAlt $
-    \thenLabel -> tell [ unbox_any Bool
-                       , brtrue thenLabel ]
+  cgIfThenElse v Bool thenAlt elseAlt $
+    \thenLabel -> tell [ brtrue thenLabel ]
 
 cil (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
-  cgIfThenElse v thenAlt elseAlt $
+  cgIfThenElse v Cil.Object thenAlt elseAlt $
     \thenLabel -> do loadSConTag
                      tell [ ldc tag
                           , beq thenLabel ]
@@ -201,7 +206,7 @@ cil (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
 cil (SCase Shared v [t@SConstCase{}, e@SDefaultCase{}, SDefaultCase{}]) = cil (SCase Shared v [t, e])
 
 cil (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
-  cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
+  cgIfThenElse v (constType c) thenAlt elseAlt $ \thenLabel ->
     cgBranchEq c thenLabel
 
 cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
@@ -222,20 +227,23 @@ cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) = cgCase v alts
 
 cil (SApp isTailCall n args) = do
-  forM_ args load
+  forM_ args (load >=> boxIfValueType)
   if isTailCall
-    then tell [ tailcall app, ret, ldnull ]
-    else tell [ app ]
+    then do tell [ tailcall app, ret, ldnull ]
+            return Cil.Object
+    else do tell [ app ]
+            return Cil.Object
   where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
 
 cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
-  where emit :: CILForeign -> CilCodegen ()
-        emit (CILTypeOf t) =
+  where emit :: CILForeign -> CilCodegen PrimitiveType
+        emit (CILTypeOf t) = do
           tell [ ldtoken t
                , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
-        emit (CILEnumValueOf t i) =
-          tell [ ldc i
-               , box t ]
+          return Cil.Object
+        emit (CILEnumValueOf t i) = do
+          tell [ ldc i ]
+          return t
         emit ffi     = do
           mapM_ loadArg (zip (map snd args) sig)
           case ffi of
@@ -256,59 +264,89 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
               in tell [ ldsfld   retType assemblyName typeName fn ]
             _ -> error $ "unsupported ffi descriptor: " ++ show ffi
           acceptBoxOrPush retType
+          return retType
         loadArg :: (LVar, PrimitiveType) -> CilCodegen ()
         loadArg (loc, t) = do load loc
                               castOrUnbox t
         acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
         acceptBoxOrPush Void              = tell [ loadNothing ]
-        acceptBoxOrPush t | isValueType t = tell [ box t ]
+        --acceptBoxOrPush t | isValueType t = tell [ box t ]
         acceptBoxOrPush _                 = return ()
         sig                               = map (foreignTypeToCilType . fst) args
         retType                           = foreignTypeToCilType retDesc
 
-cil e = unsupported "expression" e
+cil e = do
+  unsupported "expression" e
+  return Cil.Object
 
 castOrUnbox :: PrimitiveType -> CilCodegen ()
 castOrUnbox t =
   tell [
     if isValueType t
        then unbox_any t
-       else castclass t
-    ]
+       else castclass t ]
 
 isValueType :: PrimitiveType -> Bool
 isValueType (ValueType _ _) = True
 isValueType Float32 = True
 isValueType Int32   = True
 isValueType Bool    = True
+isValueType Char    = True
 isValueType _       = False
+
+constType :: Const -> PrimitiveType
+constType (BI _) = Int32 -- for now
+constType (I _) = Int32
+constType (Fl _) = Float32
+constType (Ch _) = Char
+constType (Str _) = String
+constType (B8 _) = Char
+constType (B32 _) = Int32
+constType c = error $ "Unmapped Const: " ++ constDocs c
 
 loadSConTag :: CilCodegen ()
 loadSConTag = tell [ castclass (ReferenceType "" "SCon")
                    , ldfld Int32 "" "SCon" "tag" ]
 
-cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen ()
-cgIfThenElse v thenAlt elseAlt cgBranch = do
+cgIfThenElse :: LVar -> PrimitiveType -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen PrimitiveType
+cgIfThenElse v@(Loc i) ty thenAlt elseAlt cgBranch = do
   thenLabel <- gensym "THEN"
   endLabel  <- gensym "END"
-  load v
+  CodegenState _ locals <- get
+  let lty = lookup i locals
+  loadAs ty v
   cgBranch thenLabel
-  cil elseAlt
+  elseTy <- cil elseAlt
+  boxIfValueType elseTy
   tell [ br endLabel
        , label thenLabel ]
-  cil thenAlt
+  thenTy <- cil thenAlt
+  boxIfValueType thenTy
   tell [ label endLabel ]
+  return Cil.Object -- unable to determine ifThenElse type, hence boxing and Cil.Object...
 
-cgConst :: Const -> CilCodegen ()
-cgConst (Str s) = tell [ ldstr s ]
+cgConst :: Const -> CilCodegen PrimitiveType
+cgConst (Str s) = do
+  tell [ ldstr s ]
+  return String
+
 cgConst (I i)   = cgConst . BI . fromIntegral $ i
-cgConst (BI i)  = tell [ ldc i
-                       , boxInt32 ]
-cgConst (Ch c)  = tell [ ldc $ ord c
-                       , boxChar ]
-cgConst (Fl d)  = tell [ ldc_r4 (double2Float d)
-                       , boxFloat32 ]
-cgConst c = unsupported "const" c
+
+cgConst (BI i)  = do
+  tell [ ldc i ]
+  return Int32
+
+cgConst (Ch c)  = do
+  tell [ ldc $ ord c ]
+  return Char
+
+cgConst (Fl d)  = do
+  tell [ ldc_r4 (double2Float d) ]
+  return Float32
+
+cgConst c = do
+  unsupported "const" c
+  return Cil.Object
 {-
   = I Int
   | BI Integer
@@ -327,7 +365,7 @@ cgConst c = unsupported "const" c
   | Forgot
 -}
 
-cgCase :: LVar -> [SAlt] -> CilCodegen ()
+cgCase :: LVar -> [SAlt] -> CilCodegen PrimitiveType
 cgCase v alts@(SConstCase{} : _) = cgSwitchCase v alts loadTag altTag
   where loadTag = tell [ unbox_any Int32 ]
         altTag (SConstCase (I t) _) = t
@@ -338,8 +376,8 @@ cgCase v alts = cgSwitchCase v alts loadTag altTag
         altTag (SConCase _ t _ _ _) = t
         altTag alt = error $ "expecting SConCase got: " ++ show alt
 
-cgSwitchCase :: LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
-cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
+cgSwitchCase :: LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen PrimitiveType
+cgSwitchCase val alts loadTag altTag  | canBuildJumpTable alts = do
   labelPrefix <- gensym "L"
   let labels = map ((labelPrefix++) . show) [0..(length alts - 1)]
   endLabel <- gensym "END"
@@ -350,66 +388,76 @@ cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
        , switch labels ]
   mapM_ (cgAlt endLabel val) (zip labels alts)
   tell [ label endLabel ]
+  return Cil.Object
   where canBuildJumpTable (a:as) = canBuildJumpTable' (altTag a) as
         canBuildJumpTable _      = False
         canBuildJumpTable' _ [SDefaultCase _]     = True
         canBuildJumpTable' t (a:as) | t' == t + 1 = canBuildJumpTable' t' as where t' = altTag a
         canBuildJumpTable' _ _                    = False
         baseTag = altTag (head alts)
-cgSwitchCase _ _ _ alts = unsupported "switch case alternatives" alts
 
-cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
+cgSwitchCase _ _ _ alts = do
+  unsupported "switch case alternatives" alts
+  return Cil.Object
+
+cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen PrimitiveType
 cgAlt end v (l, alt) = do
   tell [ label l ]
-  cg alt
+  ty <- cg alt
+  boxIfValueType ty
   tell [ br end ]
+  return Cil.Object -- ehh
   where cg (SConstCase _ e) = cil e
         cg (SDefaultCase e) = cil e
         cg c                = cgSConCase v c
 
-storeLocal :: Int -> CilCodegen ()
-storeLocal i = do
-  tell [ stloc i ]
-  modify ensureLocal
-  where ensureLocal CodegenState{..} = CodegenState nextSuffix (max localCount (i + 1))
+storeLocal :: (Int, PrimitiveType) -> CilCodegen ()
+storeLocal (i, ty) = do
+  CodegenState _ locals <- get
+  sym <- gensym $ "loc" ++ show i ++ "_"
+  modify (addLocal sym)
+  localCount <- gets (\(CodegenState _ locals) -> length locals)
+  tell [ localsInit [ Local ty sym ], stlocN sym ]
+  where addLocal sym CodegenState{..} = CodegenState nextSuffix ((i, (ty, sym)):locals)
 
 cgBranchEq :: Const -> String -> CilCodegen ()
 cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
 cgBranchEq (Ch c) target =
-  tell [ unbox_any Char
-       , ldc $ ord c
+  tell [ ldc $ ord c
        , beq target ]
 cgBranchEq (I i) target =
-  tell [ unbox_any Int32
-       , ldc i
+  tell [ ldc i
        , beq target ]
 cgBranchEq c _ = unsupported "branch on const" c
 
-cgSConCase :: LVar -> SAlt -> CilCodegen ()
+cgSConCase :: LVar -> SAlt -> CilCodegen PrimitiveType
 cgSConCase v (SConCase offset _ _ fs sexp) = do
   unless (null fs) $ do
     load v
     tell [ castclass sconTypeRef
          , ldfld array "" "SCon" "fields" ]
-    offset' <- localIndex offset
-    mapM_ project (zip [0..length fs - 1] [offset'..])
+    mapM_ project (zip [0..length fs - 1] [offset..])
     tell [ pop ]
   cil sexp
   where project (f, l) = do tell [ dup
                                  , ldc f
                                  , ldelem_ref ]
-                            storeLocal l
-cgSConCase _ c = unsupported "SConCase" c
+                            storeLocal (l, Cil.Object)
+cgSConCase _ c = do
+  unsupported "SConCase" c
+  return Cil.Object
 
-cgOp :: PrimFn -> [LVar] -> CilCodegen ()
+cgOp :: PrimFn -> [LVar] -> CilCodegen PrimitiveType
 cgOp LWriteStr [_, s] = do
   load s
   tell [ castclass String
        , call [] Void "mscorlib" "System.Console" "Write" [String]
        , loadNothing ]
+  return Cil.Object
 
-cgOp LReadStr [_] =
+cgOp LReadStr [_] = do
   tell [ call [] String "mscorlib" "System.Console" "ReadLine" [] ]
+  return String
 
 cgOp LStrRev [s] = do
   loadString s
@@ -417,43 +465,48 @@ cgOp LStrRev [s] = do
        , dup
        , call [] Void "mscorlib" "System.Array" "Reverse" [ReferenceType "mscorlib" "System.Array"]
        , newobj "mscorlib" "System.String" [charArray] ]
+  return String
 
 cgOp LStrLen [s] = do
   loadString s
-  tell [ callvirt Int32 "mscorlib" "System.String" "get_Length" []
-       , boxInt32 ]
+  tell [ callvirt Int32 "mscorlib" "System.String" "get_Length" [] ]
+  return Int32
 
 cgOp LStrConcat args = do
   forM_ args loadString
   tell [ call [] String "mscorlib" "System.String" "Concat" (map (const String) args) ]
+  return String
 
 cgOp LStrCons [h, t] = do
   loadAs Char h
   tell [ call [] String "mscorlib" "System.Char" "ToString" [Char] ]
   loadString t
   tell [ call [] String "mscorlib" "System.String" "Concat" [String, String] ]
+  return String
 
 cgOp LStrSubstr [index, count, s] = do
   loadString s
   loadAs Int32 index
   loadAs Int32 count
   tell [ callvirt String "mscorlib" "System.String" "Substring" [Int32, Int32] ]
+  return String
 
 cgOp LStrEq args = do
   forM_ args loadString
-  tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (map (const String) args)
-       , boxInt32 ] -- strange but correct
+  tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (map (const String) args) ]
+  return Bool
 
 cgOp LStrHead [v] = do
   loadString v
   tell [ ldc_i4 0
-       , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]
-       , boxChar ]
+       , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]]
+  return Char
 
 cgOp LStrTail [v] = do
   loadString v
   tell [ ldc_i4 1
        , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
+  return String
 
 cgOp (LStrInt ITNative) [v] = do
   val <- gensym "val"
@@ -464,10 +517,12 @@ cgOp (LStrInt ITNative) [v] = do
   tell [ ldlocaN val
        , call [] Bool "mscorlib" "System.Int32" "TryParse" [String, ByRef Int32]
        , pop
-       , ldlocN val
-       , boxInt32 ]
+       , ldlocN val ]
+  return Int32
 
-cgOp (LStrInt i) [_] = unsupported "LStrInt" i
+cgOp (LStrInt i) [_] = do
+  unsupported "LStrInt" i
+  return Int32
 
 -- cgOp (LChInt ITNative) [c] = do
 --   load c
@@ -499,12 +554,17 @@ cgOp (LSDiv ATFloat)        args = floatOp Cil.div args
 cgOp (LPlus ATFloat)        args = floatOp add args
 cgOp (LMinus ATFloat)       args = floatOp sub args
 cgOp LFloatStr              [f]  = primitiveToString f
-cgOp (LExternal nul)        [] | nul == sUN "prim__null" = tell [ ldnull ]
-cgOp o _ = unsupported "operation" o
+cgOp (LExternal nul)        [] | nul == sUN "prim__null" = do tell [ ldnull ]
+                                                              return Cil.Object
+cgOp o _ = do
+  unsupported "operation" o
+  return Cil.Object
 
-primitiveToString :: LVar -> CilCodegen ()
-primitiveToString p = do load p
-                         tell [ objectToString ]
+primitiveToString :: LVar -> CilCodegen PrimitiveType
+primitiveToString p = do
+  ty <- load p
+  tell [ box ty, objectToString ]
+  return String
 
 objectToString :: MethodDecl
 objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
@@ -527,26 +587,26 @@ gensym prefix = do
   put (CodegenState (suffix + 1) locals)
   return $ prefix ++ show suffix
 
-intOp :: MethodDecl -> [LVar] -> CilCodegen ()
+intOp :: MethodDecl -> [LVar] -> CilCodegen PrimitiveType
 intOp = numOp Int32
 
-floatOp :: MethodDecl -> [LVar] -> CilCodegen ()
+floatOp :: MethodDecl -> [LVar] -> CilCodegen PrimitiveType
 floatOp = numOp Float32
 
-numOp :: PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen ()
+numOp :: PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen PrimitiveType
 numOp t = primitiveOp t t
 
-primitiveOp :: PrimitiveType -> PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen ()
+primitiveOp :: PrimitiveType -> PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen PrimitiveType
 primitiveOp argT resT op args = do
   forM_ args (loadAs argT)
-  tell [ op
-       , box resT ]
+  tell [ op ]
+  return resT
 
-convert :: PrimitiveType -> PrimitiveType -> String -> LVar -> CilCodegen ()
+convert :: PrimitiveType -> PrimitiveType -> String -> LVar -> CilCodegen PrimitiveType
 convert from to fn arg = do
   loadAs from arg
-  tell [ call [] to "mscorlib" "System.Convert" fn [from]
-       , box to ]
+  tell [ call [] to "mscorlib" "System.Convert" fn [from] ]
+  return to
 
 boxInt32, boxFloat32, boxChar, boxBoolean :: MethodDecl
 boxInt32   = box Int32
@@ -554,10 +614,13 @@ boxFloat32 = box Float32
 boxChar    = box Char
 boxBoolean = box Bool
 
+boxIfValueType :: PrimitiveType -> CilCodegen ()
+boxIfValueType ty = when (isValueType ty) $ tell [ box ty ]
+
 loadAs :: PrimitiveType -> LVar -> CilCodegen ()
-loadAs valueType l = do
-  load l
-  tell [ unbox_any valueType ]
+loadAs ty l = do
+  loadedTy <- load l
+  unless (isValueType loadedTy) $ tell [ unbox_any ty ]
 
 loadString :: LVar -> CilCodegen ()
 loadString l = do
@@ -567,19 +630,19 @@ loadString l = do
 ldc :: (Integral n) => n -> MethodDecl
 ldc = ldc_i4 . fromIntegral
 
-load :: LVar -> CilCodegen ()
+load :: LVar -> CilCodegen PrimitiveType
 load (Loc i) = do
-  li <- localIndex i
-  tell [
-    if li < 0
-      then ldarg i
-      else ldloc li ]
-load v = unsupported "LVar" v
-
-localIndex :: Offset -> CilCodegen Offset
-localIndex i = do
-  (CodegenInput _ paramCount) <- ask
-  return $ i - paramCount
+  CodegenState _ locals <- get
+  case lookup i locals of
+    Just (ty, sym) -> do
+      tell [ ldlocN sym ]
+      return ty
+    Nothing -> do
+      tell [ ldarg i ]
+      return Cil.Object
+load v = do
+  unsupported "LVar" v
+  return Cil.Object
 
 entryPointName :: Name
 entryPointName = MN 0 "runMain"
