@@ -20,7 +20,9 @@ install:
 script:
 - cd vendor/language-cil && cabal install --only-dependencies -j2 && cabal install
 - cd ../..
-- cd vendor/idris && make && make install
+- cd vendor/idris
+- cabal install --only-dependencies -j2 --disable-optimisation
+- cabal install -j2 --disable-optimisation
 - cd ../..
 - cd rts && idris --install cil.ipkg && cd ..
 - cabal install --only-dependencies --enable-tests -j2 && cabal configure --enable-tests
