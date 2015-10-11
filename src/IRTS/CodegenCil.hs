@@ -178,7 +178,7 @@ cil (SCon Nothing t _ fs) = do
        , ldc $ length fs
        , newarr Cil.Object ]
   mapM_ storeElement (zip [0..] fs)
-  tell [ newobj "" "Record" [Int32, array] ]
+  tell [ newobj "" recordTypeName [Int32, array] ]
   where storeElement (i, f) = do
           tell [ dup
                , ldc_i4 i ]
@@ -283,7 +283,7 @@ cilDelegate delegateTy retDesc [(_, fnArg)] = do
   let (delegateAsm, delegateTyName) = assemblyNameAndTypeFrom delegateTy
   let ForeignFunctionType{..} = fft
   tell [ castclass recordTypeRef
-       , ldftn_instance returnType "" "Record" fn parameterTypes
+       , ldftn_instance returnType "" recordTypeName fn parameterTypes
        , newobj delegateAsm delegateTyName [Cil.Object, IntPtr] ]
 cilDelegate _ retDesc _ = unsupported "delegate" retDesc
 
@@ -345,8 +345,8 @@ isValueType Char    = True
 isValueType _       = False
 
 loadRecordTag :: CilCodegen ()
-loadRecordTag = tell [ castclass (ReferenceType "" "Record")
-                     , ldfld Int32 "" "Record" "tag" ]
+loadRecordTag = tell [ castclass recordTypeRef
+                     , ldfld Int32 "" recordTypeName "tag" ]
 
 cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen ()
 cgIfThenElse v thenAlt elseAlt cgBranch = do
@@ -462,7 +462,7 @@ cgSConCase v (SConCase offset _ _ fs sexp) = do
   unless (null fs) $ do
     load v
     tell [ castclass recordTypeRef
-         , ldfld array "" "Record" "fields" ]
+         , ldfld array "" recordTypeName "fields" ]
     offset' <- localIndex offset
     mapM_ project (zip [0..length fs - 1] [offset'..])
     tell [ pop ]
@@ -689,7 +689,7 @@ defaultCtorDef = Constructor [MaPublic] Void []
 recordType :: [MethodDef] -> TypeDef
 recordType methods = classDef [CaPrivate] className noExtends noImplements
                               [tag, fields] allMethods []
-  where className  = "Record"
+  where className  = recordTypeName
         tag        = Field [FaPublic, FaInitOnly] Int32 "tag"
         fields     = Field [FaPublic, FaInitOnly] array "fields"
         allMethods = [ctor, toString] ++ methods
@@ -714,7 +714,10 @@ recordType methods = classDef [CaPrivate] className noExtends noImplements
                        , ret ]
 
 recordTypeRef :: PrimitiveType
-recordTypeRef = ReferenceType "" "Record"
+recordTypeRef = ReferenceType "" recordTypeName
+
+recordTypeName :: String
+recordTypeName = "Record"
 
 publicStruct :: TypeName -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
 publicStruct name = classDef [CaPublic] name (extends "[mscorlib]System.ValueType") noImplements
