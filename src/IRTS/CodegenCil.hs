@@ -55,7 +55,7 @@ assemblyFor ci = Assembly [mscorlibRef] asmName types
 typesFor :: CodegenInfo -> [TypeDef]
 typesFor ci =
   let (mainModule, delegates) = runState (moduleFor ci) M.empty
-  in mainModule : sconType (M.elems delegates) : nothingType : exportedTypes ci
+  in mainModule : recordType (M.elems delegates) : nothingType : exportedTypes ci
 
 moduleFor :: CodegenInfo -> DelegateWriter TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
@@ -178,7 +178,7 @@ cil (SCon Nothing t _ fs) = do
        , ldc $ length fs
        , newarr Cil.Object ]
   mapM_ storeElement (zip [0..] fs)
-  tell [ newobj "" "SCon" [Int32, array] ]
+  tell [ newobj "" "Record" [Int32, array] ]
   where storeElement (i, f) = do
           tell [ dup
                , ldc_i4 i ]
@@ -194,7 +194,7 @@ cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
 
 cil (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
   cgIfThenElse v thenAlt elseAlt $
-    \thenLabel -> do loadSConTag
+    \thenLabel -> do loadRecordTag
                      tell [ ldc tag
                           , beq thenLabel ]
 
@@ -273,7 +273,7 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
 
 cil e = unsupported "expression" e
 
--- Delegates are emitted as instance functions of the general SCon data type
+-- Delegates are emitted as instance functions of the general Record data type
 -- so we can avoid the overhead of an additional closure object at runtime
 cilDelegate :: PrimitiveType -> FDesc -> [(FDesc, LVar)] -> CilCodegen ()
 cilDelegate delegateTy retDesc [(_, fnArg)] = do
@@ -282,8 +282,8 @@ cilDelegate delegateTy retDesc [(_, fnArg)] = do
   load fnArg
   let (delegateAsm, delegateTyName) = assemblyNameAndTypeFrom delegateTy
   let ForeignFunctionType{..} = fft
-  tell [ castclass sconTypeRef
-       , ldftn_instance returnType "" "SCon" fn parameterTypes
+  tell [ castclass recordTypeRef
+       , ldftn_instance returnType "" "Record" fn parameterTypes
        , newobj delegateAsm delegateTyName [Cil.Object, IntPtr] ]
 cilDelegate _ retDesc _ = unsupported "delegate" retDesc
 
@@ -344,9 +344,9 @@ isValueType Bool    = True
 isValueType Char    = True
 isValueType _       = False
 
-loadSConTag :: CilCodegen ()
-loadSConTag = tell [ castclass (ReferenceType "" "SCon")
-                   , ldfld Int32 "" "SCon" "tag" ]
+loadRecordTag :: CilCodegen ()
+loadRecordTag = tell [ castclass (ReferenceType "" "Record")
+                     , ldfld Int32 "" "Record" "tag" ]
 
 cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen ()
 cgIfThenElse v thenAlt elseAlt cgBranch = do
@@ -395,7 +395,7 @@ cgCase check v alts@(SConstCase{} : _) = cgSwitchCase check v alts loadTag altTa
         altTag alt = error $ "expecting (SConstCase (I t)) got: " ++ show alt
 
 cgCase check v alts = cgSwitchCase check v alts loadTag altTag
-  where loadTag = loadSConTag
+  where loadTag = loadRecordTag
         altTag (SConCase _ t _ _ _) = t
         altTag alt = error $ "expecting SConCase got: " ++ show alt
 
@@ -461,8 +461,8 @@ cgSConCase :: LVar -> SAlt -> CilCodegen ()
 cgSConCase v (SConCase offset _ _ fs sexp) = do
   unless (null fs) $ do
     load v
-    tell [ castclass sconTypeRef
-         , ldfld array "" "SCon" "fields" ]
+    tell [ castclass recordTypeRef
+         , ldfld array "" "Record" "fields" ]
     offset' <- localIndex offset
     mapM_ project (zip [0..length fs - 1] [offset'..])
     tell [ pop ]
@@ -686,26 +686,26 @@ defaultCtorDef = Constructor [MaPublic] Void []
                    , call [CcInstance] Void "" "object" ".ctor" []
                    , ret ]
 
-sconType :: [MethodDef] -> TypeDef
-sconType methods = classDef [CaPrivate] className noExtends noImplements
-                            [sconTag, sconFields] allMethods []
-  where className  = "SCon"
-        sconTag    = Field [FaPublic, FaInitOnly] Int32 "tag"
-        sconFields = Field [FaPublic, FaInitOnly] array "fields"
-        allMethods = [sconCtor, sconToString] ++ methods
-        sconCtor   = Constructor [MaPublic] Void [ Param Nothing Int32 "tag"
+recordType :: [MethodDef] -> TypeDef
+recordType methods = classDef [CaPrivate] className noExtends noImplements
+                              [tag, fields] allMethods []
+  where className  = "Record"
+        tag        = Field [FaPublic, FaInitOnly] Int32 "tag"
+        fields     = Field [FaPublic, FaInitOnly] array "fields"
+        allMethods = [ctor, toString] ++ methods
+        ctor       = Constructor [MaPublic] Void [ Param Nothing Int32 "tag"
                                                  , Param Nothing array "fields" ]
-                     [ ldarg 0
-                     , call [CcInstance] Void "" "object" ".ctor" []
-                     , ldarg 0
-                     , ldarg 1
-                     , stfld Int32 "" className "tag"
-                     , ldarg 0
-                     , ldarg 2
-                     , stfld array "" className "fields"
-                     , ret ]
-        sconToString = Method [MaPublic, MaVirtual] String "ToString" []
-                       [ ldstr "SCon "
+                       [ ldarg 0
+                       , call [CcInstance] Void "" "object" ".ctor" []
+                       , ldarg 0
+                       , ldarg 1
+                       , stfld Int32 "" className "tag"
+                       , ldarg 0
+                       , ldarg 2
+                       , stfld array "" className "fields"
+                       , ret ]
+        toString   = Method [MaPublic, MaVirtual] String "ToString" []
+                       [ ldstr (className ++ " ")
                        , ldarg 0
                        , ldfld Int32 "" className "tag"
                        , boxInt32
@@ -713,8 +713,8 @@ sconType methods = classDef [CaPrivate] className noExtends noImplements
                        , call [] String "mscorlib" "System.String" "Concat" [String, String]
                        , ret ]
 
-sconTypeRef :: PrimitiveType
-sconTypeRef = ReferenceType "" "SCon"
+recordTypeRef :: PrimitiveType
+recordTypeRef = ReferenceType "" "Record"
 
 publicStruct :: TypeName -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
 publicStruct name = classDef [CaPublic] name (extends "[mscorlib]System.ValueType") noImplements
