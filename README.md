@@ -1,6 +1,6 @@
 # idris-cil [![Build Status](https://travis-ci.org/bamboo/idris-cil.png?branch=master)](https://travis-ci.org/bamboo/idris-cil)
 
-A Common Intermediate Language backend for [Idris](http://http://www.idris-lang.org/).
+A Common Intermediate Language backend for [Idris](http://www.idris-lang.org/).
 
 ## Why
 
