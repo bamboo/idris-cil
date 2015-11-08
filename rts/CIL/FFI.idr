@@ -187,3 +187,9 @@ namespace System.Convert
     invoke (CILStatic (corlibTy "System.Convert") "ToInt32")
            (Ptr -> CIL_IO Int)
            (believe_me o)
+
+putStrLn : String -> CIL_IO ()
+putStrLn = putStrLn'
+
+printLn : Show a => a -> CIL_IO ()
+printLn = printLn'
