@@ -36,7 +36,6 @@ library
                   , transformers
                   , bytestring
                   , utf8-string
-                  , parsec >= 3.1.9
 
 executable idris-codegen-cil
   main-is:            Main.hs
