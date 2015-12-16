@@ -117,7 +117,7 @@ foreignList d        = error $ "invalid foreign list: " ++ show d
 assemblyNameAndTypeFrom :: PrimitiveType -> (String, String)
 assemblyNameAndTypeFrom (ReferenceType assemblyName typeName) = (assemblyName, typeName)
 assemblyNameAndTypeFrom (ValueType     assemblyName typeName) = (assemblyName, typeName)
-assemblyNameAndTypeFrom gti@(GenericReferenceTypeInstance{})  = ("", pr gti "")
+assemblyNameAndTypeFrom gti@GenericReferenceTypeInstance{}    = ("", pr gti "")
 assemblyNameAndTypeFrom String = ("", "string")
 assemblyNameAndTypeFrom Object = ("", "object")
 assemblyNameAndTypeFrom t = error $ "unsupported assembly name for: " ++ show t
