@@ -1,5 +1,5 @@
-/dist
-/cabal.sandbox.config
+dist
+cabal.sandbox.config
 *.exe
 *.ibc
 *.il

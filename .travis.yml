@@ -22,6 +22,6 @@ script:
 - cd ../..
 - cd vendor/idris && cabal install --only-dependencies -j2 && cabal configure && cabal build -j2 && cabal install -j2
 - cd ../..
-- cd rts && idris --install cil.ipkg && cd ..
+- cd rts && idris --install cil.ipkg && cd ../codegen
 - cabal install --only-dependencies --enable-tests -j2 && cabal configure --enable-tests
 - cabal build && cabal test --show-details=streaming --test-options="--color"

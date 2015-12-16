@@ -39,9 +39,10 @@ cabal install
 cd ..
 
 git clone git@github.com:bamboo/idris-cil
-cd idris-cil
-cd rts && idris --install cil.ipkg && cd ..
-cabal sandbox init --sandbox ../sandbox
+cd idris-cil/rts
+idris --install cil.ipkg
+cd ../codegen
+cabal sandbox init --sandbox ../../sandbox
 cabal install --only-dependencies --enable-tests
 cabal configure --enable-tests
 cabal test
