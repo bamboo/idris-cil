@@ -53,6 +53,7 @@ test-suite spec
                   , smallcheck
                   , hspec-smallcheck
                   , language-cil >= 0.3.1
+                  , text
                   , ciltree
 
 test-suite hlint

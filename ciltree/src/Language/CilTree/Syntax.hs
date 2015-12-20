@@ -1,12 +1,15 @@
 module Language.CilTree.Syntax
        ( Exp(..)
+       , BinOp(..)
        , Local(..)
+       , LocalId
        , ExpType(..)
        , ConstValue(..)
        , PrimitiveType(..)
        , MethodRef(..)
        , MemberKind(..)
        , MethodDef(..)
+       , FieldRef(..)
        ) where
 
 import Language.Cil (PrimitiveType(..))
@@ -15,7 +18,7 @@ data Exp = Let      Local Exp Exp
          | Get      Local
          | GetAddr  Local
          | GetArg   Int
-         | GetField FieldRef
+         | GetField Exp FieldRef
          | Call     Bool MethodRef [Exp] -- Call TailCall Method Arguments
          | New      PrimitiveType [PrimitiveType] [Exp]
          | Unary    PrimitiveType UnOp  Exp
@@ -72,6 +75,7 @@ data BinOp = Add
            | Sub
            | Mul
            | Div
+           | Eql
            deriving Show
 
 data UnOp = ArrayLength
