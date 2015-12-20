@@ -49,7 +49,7 @@ emit (Let local value body) = do
 emit (Const c) = emitConst c
 
 emit (Seq es) = emitSeq es
-  where emitSeq []      = pure ()
+  where emitSeq []      = return ()
         emitSeq [e]     = emit e
         emitSeq (e:es') = do emit e
                              tell [ Cil.pop ]
