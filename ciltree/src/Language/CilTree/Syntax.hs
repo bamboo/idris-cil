@@ -81,20 +81,3 @@ data BinOp = Add
 data UnOp = ArrayLength
           | Not
           deriving Show
-
-example1 :: Exp
-example1 =
-  let var = Local (TypeHole 1) 1
-  in Call False
-          (MethodRef Instance String "Substring" (Type String) [Type Int32])
-          [Get var, Const $ CInt32 1]
-
-
-example2 :: Exp
-example2 =
-  let result = Local (Type Int32) 1
-  in Let result (Const $ CInt32 0) $
-       Seq [ Call False
-                  (MethodRef Static Int32 "TryParse" (Type Bool) [Type String, Type (ByRef Int32)])
-                  [GetArg 0, GetAddr result]
-           , Get result ]
