@@ -18,8 +18,9 @@ import           System.Exit
 import           System.FilePath
 import           System.Info (os)
 import           System.Process
-import           Test.Hspec
+import           Test.Hspec (Spec, parallel, describe, it)
 import qualified Test.Hspec as H
+import           Test.Hspec.Expectations.Pretty
 
 spec :: Spec
 spec = describe "idris-cil" $ do
