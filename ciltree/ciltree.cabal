@@ -51,6 +51,7 @@ test-suite spec
                   , hspec >= 1.3
                   , smallcheck
                   , hspec-smallcheck
+                  , hspec-expectations-pretty-diff
                   , language-cil >= 0.3.1
                   , text
                   , ciltree

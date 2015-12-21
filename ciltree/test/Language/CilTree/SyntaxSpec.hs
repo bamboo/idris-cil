@@ -4,7 +4,8 @@ import           Data.Function (on)
 import qualified Data.Text as T
 import           Language.CilTree.Emit
 import           Language.CilTree.Syntax
-import           Test.Hspec
+import           Test.Hspec (Spec, describe, it)
+import           Test.Hspec.Expectations.Pretty
 
 spec :: Spec
 spec =
