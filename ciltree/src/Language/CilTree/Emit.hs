@@ -3,26 +3,50 @@
 
 module Language.CilTree.Emit where
 
+
 import           Control.Monad.Writer.Strict
 import           Data.DList (DList, toList)
 import qualified Language.Cil as Cil
 import           Language.CilTree.Syntax
 
 
-cilFor :: MethodDef -> String
-cilFor m = Cil.pr (emitMethod m) ""
+cilForMember :: MemberDefinition -> String
+cilForMember m = Cil.pr (emitMember m) ""
 
 
-emitMethod :: MethodDef -> Cil.MethodDef
-emitMethod MethodDef{..} = cilMethodFor methodSignature (toList body)
-  where body = execWriter (emitMethodBody methodBody)
+cilFor :: AssemblyDefinition -> String
+cilFor assembly = Cil.pr (emitAssembly assembly) ""
 
 
-cilMethodFor :: MethodRef -> [Cil.MethodDecl] -> Cil.MethodDef
-cilMethodFor MethodRef{..} = Cil.Method attrs (typeFor returnType) methodName parameters
-  where attrs = [Cil.MaStatic, Cil.MaAssembly]
-        parameters = zipWith param [0..] parameterTypes
-        param i t = Cil.Param Nothing (typeFor t) ("p" ++ show i)
+emitAssembly :: AssemblyDefinition -> Cil.Assembly
+emitAssembly (AssemblyDefinition name types) = Cil.Assembly [] name (map emitType types)
+
+
+emitType :: TypeDefinition -> Cil.TypeDef
+emitType (ClassDefinition name members) = Cil.classDef [] name Nothing [] fields methods []
+  where fields = []
+        methods = map emitMember members
+
+
+emitMember :: MemberDefinition -> Cil.MethodDef
+emitMember MethodDefinition{..} = emitMethod methodSignature (emitMethodBody methodBody)
+emitMember (ConstructorDefinition kind parameterTypes body) = Cil.Constructor [] Void parameters (emitMethodBody body)
+  where parameters = emitParameters parameterTypes
+
+
+emitMethodBody :: Exp -> [Cil.MethodDecl]
+emitMethodBody = toList . execWriter . cilMethodBodyFor
+
+
+emitMethod :: MethodRef -> [Cil.MethodDecl] -> Cil.MethodDef
+emitMethod MethodRef{..} = Cil.Method attrs (typeFor returnType) methodName parameters
+  where attrs = [Cil.MaStatic | methodKind == Static] ++ [Cil.MaAssembly]
+        parameters = emitParameters parameterTypes
+
+
+emitParameters :: [ExpType] -> [Cil.Parameter]
+emitParameters = zipWith param [0..]
+  where param i t = Cil.Param Nothing (typeFor t) ("p" ++ show i)
 
 
 typeFor :: ExpType -> Cil.PrimitiveType
@@ -33,9 +57,9 @@ typeFor _        = Cil.Object
 type CIL = Writer (DList Cil.MethodDecl)
 
 
-emitMethodBody :: Exp -> CIL ()
-emitMethodBody body = do
-  emit body
+cilMethodBodyFor :: Exp -> CIL ()
+cilMethodBodyFor e = do
+  emit e
   tell [ Cil.ret ]
 
 
@@ -51,12 +75,14 @@ emit (Const c) = emitConst c
 emit (Seq es) = emitSeq es
   where emitSeq []      = return ()
         emitSeq [e]     = emit e
-        emitSeq (e:es') = do emit e
-                             tell [ Cil.pop ]
-                             emitSeq es'
+        emitSeq (e:es') = do
+          emit e
+          tell [ Cil.pop ]
+          emitSeq es'
 
-emit (Call _tailCall MethodRef{..} args) = do
-  mapM_ emit args
+emit (Call _tailCall target MethodRef{..} args) = do
+  forM_ target emit
+  forM_ args emit
   let (assemblyName, typeName) = assemblyNameAndTypeFrom methodOwner
   tell [ Cil.call [] retType assemblyName typeName methodName paramTypes ]
   where retType    = typeFor returnType
@@ -78,8 +104,8 @@ emit (Binary Object Eql x y) = do
   emit y
   tell [ Cil.ceq ]
 
-emit (GetField obj FieldRef{..}) = do
-  emit obj
+emit (GetField target FieldRef{..}) = do
+  forM_ target emit
   let (assemblyName, typeName) = assemblyNameAndTypeFrom fieldOwner
   tell [ Cil.ldfld (typeFor fieldType) assemblyName typeName fieldName ]
 
@@ -93,6 +119,7 @@ emit e = error $ "Unsupported expression: " ++ show e
 emitConst :: ConstValue -> CIL ()
 emitConst (CInt32 i) = tell [ Cil.ldc_i4 (fromIntegral i) ]
 emitConst (CStr s)   = tell [ Cil.ldstr s ]
+emitConst (CBool b)  = tell [ Cil.ldc_i4 (if b then 1 else 0) ]
 emitConst c          = error $ "Unsupported const: " ++ show c
 
 
