@@ -2,7 +2,7 @@ module CIL.FFI
 
 %default total
 
-%access public
+%access public export
 
 ||| The universe of foreign CIL types.
 data CILTy =
@@ -17,7 +17,7 @@ data CILTy =
   ||| a foreign generic parameter
   CILTyGenParam String
 
-instance Eq CILTy where
+Eq CILTy where
   (CILTyGen def args) == (CILTyGen def' args') = def  == def' && assert_total (args == args')
   (CILTyRef as tn)    == (CILTyRef as' tn')    = as   == as'  && tn == tn'
   (CILTyVal as tn)    == (CILTyVal as' tn')    = as   == as'  && tn == tn'
@@ -94,7 +94,7 @@ FFI_CIL : FFI
 FFI_CIL = MkFFI CIL_Types CILForeign String
 
 CIL_IO : Type -> Type
-CIL_IO a = IO' FFI_CIL a
+CIL_IO = IO' FFI_CIL
 
 ||| CIL FFI.
 invoke : CILForeign -> (ty : Type) ->
@@ -140,10 +140,10 @@ typeOf : CILTy -> CIL_IO RuntimeType
 typeOf t = invoke (CILTypeOf t) (CIL_IO RuntimeType)
 
 -- inheritance can be encoded as class instances or implicit conversions
-class IsA a b where {}
+interface IsA a b where {}
 
-instance IsA Object Object where {}
-instance IsA Object RuntimeType where {}
+IsA Object Object where {}
+IsA Object RuntimeType where {}
 
 ToString : IsA Object o => o -> CIL_IO String
 ToString obj =

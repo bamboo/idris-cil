@@ -23,7 +23,7 @@ instance Show Cells where
   show = show . SortedSet.toList
 
 merge : Cells -> Cells -> Cells
-merge xs ys = foldl (flip insert) xs ys
+merge xs ys = foldl (flip insert) xs (SortedSet.toList ys)
 
 main : IO ()
 main = printLn $ [(0, 1), (1, 0), (2, 2)] `merge` [(1, 0), (0, 1), (1, 1)]
