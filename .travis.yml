@@ -19,10 +19,10 @@ install:
 - git clone --depth 1 https://github.com/bamboo/language-cil.git --branch idris-cil --single-branch vendor/language-cil
 script:
 - cd vendor/language-cil && cabal install --only-dependencies -j2 && cabal install
-- cd ../../ciltree
-- cabal install --only-dependencies --enable-tests -j2 && cabal configure --enable-tests
-- cabal test --show-details=streaming --test-options="--color" -j2
-- cd ../vendor/idris && cabal install --only-dependencies -j2 && cabal configure && cabal build -j2 && cabal install -j2
+- cd ../idris && cabal install --only-dependencies -j2 && cabal configure && cabal install -j2 --disable-documentation
+# - cd ../../ciltree
+# - cabal install --only-dependencies --enable-tests -j2 && cabal configure --enable-tests
+# - cabal test --show-details=streaming --test-options="--color" -j2
 - cd ../../rts
 - idris --install cil.ipkg
 - cd ../codegen
