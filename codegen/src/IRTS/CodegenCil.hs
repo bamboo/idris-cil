@@ -41,7 +41,7 @@ codegenCil ci = do writeFileUTF8 cilFile cilText
         writeFileUTF8 f s = BS.writeFile f $ UTF8.fromString s
 
 ilasm :: String -> String -> IO ()
-ilasm input output = readProcess "ilasm" [input, "/output:" ++ output] "" >>= putStr
+ilasm input output = readProcess "ilasm" [input, "/output:" <> output] "" >>= putStr
 
 type DelegateOutput = M.Map ForeignFunctionType MethodDef
 
@@ -90,7 +90,7 @@ method decl@(SFun name ps _ sexp) = do
         parameters = map param ps
         param n    = Param Nothing Cil.Object (cilName n)
         locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
-        local i    = Local Cil.Object ("l" ++ show i)
+        local i    = Local Cil.Object ("l" <> show i)
         isEntryPoint = name == entryPointName
         removeLastTailCall :: [MethodDecl] -> [MethodDecl]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
@@ -112,7 +112,7 @@ exportedTypes ci = concatMap exports (exportDecls ci)
           where isCilFun (CilFun _) = True
                 isCilFun _          = False
                 publicClass name methods = classDef [CaPublic] name noExtends noImplements [] methods []
-        exports e = error $ "Unsupported Export: " ++ show e
+        exports e = error $ "Unsupported Export: " <> show e
 
 cilExport :: Export -> CilExport
 cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun f
@@ -121,7 +121,7 @@ cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun f
         alias      = case desc of
                        FApp (UN (T.unpack -> "CILExport")) (FStr a:_) -> a
                        _ -> ""
-        invocation = loadArgs ++ [ call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps) ]
+        invocation = loadArgs <> [ call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps) ]
         loadArgs   = concatMap loadArg (zip [0..] paramTypes)
         paramTypes = map foreignType ps
         retType    = foreignType rt
@@ -135,7 +135,7 @@ cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exported
                  , stfld Cil.Object "" exportedDataType "ptr"
                  , ret ]
 
-cilExport e = error $ "invalid export: " ++ show e
+cilExport e = error $ "invalid export: " <> show e
 
 
 data CodegenInput = CodegenInput !SDecl !Int -- cached param count
@@ -209,15 +209,15 @@ cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
 
 cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
                               in case defaultCase of
-                                   [] -> cgCase False v (sorted cases ++ [SDefaultCase SNothing])
-                                   _  -> cgCase False v (sorted cases ++ defaultCase)
+                                   [] -> cgCase False v (sorted cases <> [SDefaultCase SNothing])
+                                   _  -> cgCase False v (sorted cases <> defaultCase)
    where sorted = sortBy (compare `on` tag)
          tag (SConCase _ t _ _ _) = t
          tag (SConstCase (I t) _) = t
          tag c                    = unsupportedCase c
          caseType SDefaultCase{}  = False
          caseType _               = True
-         unsupportedCase c        = error $ show c ++ " in\n" ++ show e
+         unsupportedCase c        = error $ show c <> " in\n" <> show e
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
 cil (SChkCase v alts) = cgCase True v alts
@@ -259,7 +259,7 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
             CILStaticField declType fn ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
               in tell [ ldsfld   retType assemblyName typeName fn ]
-            _ -> error $ "unsupported ffi descriptor: " ++ show ffi
+            _ -> error $ "unsupported ffi descriptor: " <> show ffi
           acceptBoxOrPush retType
         loadLVar :: (LVar, PrimitiveType) -> CilCodegen ()
         loadLVar (loc, t) = do load loc
@@ -294,9 +294,9 @@ delegateMethodFor fft = do
     Just (Method _ _ fn _ _) ->
       return fn
     _ -> do
-      let fn = "delegate" ++ show (M.size delegates)
+      let fn = "delegate" <> show (M.size delegates)
       let ForeignFunctionType{..} = fft
-      let invocation = ldarg 0 : concatMap (\arg -> loadArg arg ++ [apply0]) (zip [1..] parameterTypes)
+      let invocation = ldarg 0 : concatMap (\arg -> loadArg arg <> [apply0]) (zip [1..] parameterTypes)
       let f = delegateFunction [MaAssembly] returnType fn parameterTypes returnTypeIO invocation
       put $ st { delegates = M.insert fft f delegates }
       return fn
@@ -309,10 +309,10 @@ cilTypeOf t = tell [ ldtoken t
 delegateFunction :: [MethAttr] -> PrimitiveType -> MethodName -> [PrimitiveType] -> Bool -> [MethodDecl] -> MethodDef
 delegateFunction attrs retType fn paramTypes io invocation = Method attrs retType fn parameters body
   where parameters = zipWith param [(0 :: Int)..] paramTypes
-        param i t  = Param Nothing t ("p" ++ show i)
+        param i t  = Param Nothing t ("p" <> show i)
         body       = if io
-                        then loadNothing : dup : invocation ++ [runIO, popBoxOrCast, ret]
-                        else invocation ++ [popBoxOrCast, ret]
+                        then loadNothing : dup : invocation <> [runIO, popBoxOrCast, ret]
+                        else invocation <> [popBoxOrCast, ret]
         runIO      = call [] Cil.Object "" moduleName "call__IO" [Cil.Object, Cil.Object, Cil.Object]
         popBoxOrCast = case retType of
                          Void -> pop
@@ -392,17 +392,17 @@ cgCase :: Bool -> LVar -> [SAlt] -> CilCodegen ()
 cgCase check v alts@(SConstCase{} : _) = cgSwitchCase check v alts loadTag altTag
   where loadTag = tell [ unbox_any Int32 ]
         altTag (SConstCase (I t) _) = t
-        altTag alt = error $ "expecting (SConstCase (I t)) got: " ++ show alt
+        altTag alt = error $ "expecting (SConstCase (I t)) got: " <> show alt
 
 cgCase check v alts = cgSwitchCase check v alts loadTag altTag
   where loadTag = loadRecordTag
         altTag (SConCase _ t _ _ _) = t
-        altTag alt = error $ "expecting SConCase got: " ++ show alt
+        altTag alt = error $ "expecting SConCase got: " <> show alt
 
 cgSwitchCase :: Bool -> LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
 cgSwitchCase check val alts loadTag altTag | canBuildJumpTable alts = do
   labelPrefix <- gensym "L"
-  let labels = map ((labelPrefix++) . show) [0..(length alts - 1)]
+  let labels = map ((labelPrefix <>) . show) [0..(length alts - 1)]
   endLabel <- gensym "END"
   load val
   loadTag
@@ -584,7 +584,7 @@ objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
 unsupported :: Show a => String -> a -> CilCodegen ()
 unsupported desc v = do
   (CodegenInput decl _) <- ask
-  throwException $ "Unsupported " ++ desc ++ " `" ++ show v ++ "' in\n" ++ show decl
+  throwException $ "Unsupported " <> desc <> " `" <> show v <> "' in\n" <> show decl
 
 throwException :: String -> CilCodegen ()
 throwException message =
@@ -597,7 +597,7 @@ gensym :: String -> CilCodegen String
 gensym prefix = do
   st@(CodegenState suffix _ _) <- get
   put $ st { nextSuffix = suffix + 1 }
-  return $ prefix ++ show suffix
+  return $ prefix <> show suffix
 
 intOp :: MethodDecl -> [LVar] -> CilCodegen ()
 intOp = numOp Int32
@@ -665,7 +665,7 @@ showName (NS n ns) = T.intercalate "." . reverse $ showName n : ns
 showName (UN t)    = t
 showName (MN i t)  = T.concat [t, T.pack $ show i]
 showName (SN sn)   = T.pack $ show sn
-showName e = error $ "Unsupported name `" ++ show e ++ "'"
+showName e = error $ "Unsupported name `" <> show e <> "'"
 
 loadNothing :: MethodDecl
 loadNothing = ldsfld Cil.Object "" "Nothing" "Default"
@@ -692,7 +692,7 @@ recordType methods = classDef [CaPrivate] className noExtends noImplements
   where className  = recordTypeName
         tag        = Field [FaPublic, FaInitOnly] Int32 "tag"
         fields     = Field [FaPublic, FaInitOnly] array "fields"
-        allMethods = [ctor, toString] ++ methods
+        allMethods = [ctor, toString] <> methods
         ctor       = Constructor [MaPublic] Void [ Param Nothing Int32 "tag"
                                                  , Param Nothing array "fields" ]
                        [ ldarg 0
@@ -705,7 +705,7 @@ recordType methods = classDef [CaPrivate] className noExtends noImplements
                        , stfld array "" className "fields"
                        , ret ]
         toString   = Method [MaPublic, MaVirtual] String "ToString" []
-                       [ ldstr (className ++ " ")
+                       [ ldstr (className <> " ")
                        , ldarg 0
                        , ldfld Int32 "" className "tag"
                        , boxInt32
@@ -737,7 +737,7 @@ boolFalse = NS (UN "False") ["Bool", "Prelude"]
 boolTrue  = NS (UN "True")  ["Bool", "Prelude"]
 
 quoted :: String -> String
-quoted n = "'" ++ concatMap validChar n ++ "'"
+quoted n = "'" <> concatMap validChar n <> "'"
   where validChar :: Char -> String
         validChar c = if c == '\''
                          then "\\'"

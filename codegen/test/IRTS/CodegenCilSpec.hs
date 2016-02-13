@@ -1,10 +1,10 @@
 module IRTS.CodegenCilSpec where
 
-import           Control.Applicative ((<$>))
 import           Control.Arrow ((>>>))
 import           Control.Monad (forM_)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT)
 import           Control.Monad.Trans.State.Strict (StateT, evalStateT)
+import           Data.Monoid((<>))
 
 import           IRTS.CodegenCil
 import           IRTS.CodegenCommon
@@ -35,7 +35,7 @@ testCaseFiles = do
 
 testCaseForFile :: FilePath -> Spec
 testCaseForFile f =
-  it ("can compile `" ++ takeBaseName f ++ "'") $ do
+  it ("can compile `" <> takeBaseName f <> "'") $ do
     output   <- exec f
     expected <- firstCommentIn f
     output `shouldBe` expected
@@ -43,7 +43,7 @@ testCaseForFile f =
 listFilesWithExtension :: String -> FilePath -> IO [FilePath]
 listFilesWithExtension ext dir = do
   files <- getDirectoryContents dir
-  return $ map (dir </>) $ filter ((== ext) . takeExtension) files
+  return $ (dir </>) <$> filter ((== ext) . takeExtension) files
 
 firstCommentIn :: FilePath -> IO String
 firstCommentIn f = takeComment <$> readFile f
@@ -58,7 +58,7 @@ exec input = do
   where output = replaceExtension input "exe"
 
 compileToBytecode :: [FilePath] -> IO ()
-compileToBytecode files = traceProcess "idris" (options ++ files)
+compileToBytecode files = traceProcess "idris" (options <> files)
   where options = ["--typeintype", "--check", "--quiet", "-p", "cil", "-p", "contrib"]
 
 evalIdris :: Monad m => IState -> StateT IState (ExceptT e m) a -> m (Either e a)
@@ -91,5 +91,5 @@ traceProcess :: String -> [String] -> IO ()
 traceProcess exe args = do
   (code, stdout, stderr) <- readProcessWithExitCode exe args ""
   case code of
-    ExitFailure _ -> error $ exe ++ " error: " ++ stdout ++ stderr
+    ExitFailure _ -> error $ exe <> " error: " <> stdout <> stderr
     _             -> return ()

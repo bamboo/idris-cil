@@ -22,7 +22,7 @@ main = do
     else runMain (cilMain opts)
 
 getOpts :: IO Opts
-getOpts = liftM (process (Opts [] "a.il")) getArgs
+getOpts = process (Opts [] "a.il") <$> getArgs
   where process opts ("-o":o:xs)         = process (opts { output = o }) xs
         process opts (x:xs)              = process (opts { inputs = x:inputs opts }) xs
         process opts []                  = opts
@@ -33,14 +33,10 @@ showUsage = do
   putStrLn "Usage: idris-codegen-cil <ibc-files> [-o <output-file>]"
   exitSuccess
 
-codegenInfoFrom :: Opts -> Idris CodegenInfo
-codegenInfoFrom opts = do
+cilMain :: Opts -> Idris ()
+cilMain opts = do
   elabPrims
   _ <- loadInputs (inputs opts) Nothing
   mainProg <- elabMain
-  compile (Via "cil") (output opts) (Just mainProg)
-
-cilMain :: Opts -> Idris ()
-cilMain opts = do
-  ci <- codegenInfoFrom opts
-  runIO $ codegenCil ci
+  ir <- compile (Via "cil") (output opts) (Just mainProg)
+  runIO $ codegenCil ir
