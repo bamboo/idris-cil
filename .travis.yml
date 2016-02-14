@@ -7,12 +7,13 @@ addons:
       - hvr-ghc
     packages:
       - cabal-install-1.22
+      - ghc-7.10.3
       - happy-1.19.3
       - alex-3.1.3
       - mono-devel
       - mono-utils
 before_install:
-- export PATH=/opt/alex/3.1.3/bin:/opt/happy/1.19.3/bin:/opt/cabal/1.22/bin:$PATH
+- export PATH=/opt/ghc/7.10.3/bin:/opt/alex/3.1.3/bin:/opt/happy/1.19.3/bin:/opt/cabal/1.22/bin:$PATH
 install:
 - cabal --version
 - git clone --depth 1 https://github.com/idris-lang/Idris-dev.git vendor/idris
