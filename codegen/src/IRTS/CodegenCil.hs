@@ -61,7 +61,7 @@ moduleFor :: CodegenInfo -> DelegateWriter TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
                   return $ classDef [CaPrivate] moduleName noExtends noImplements [] methods []
   where declsWithBody = filter hasBody decls
-        decls         = map snd $ simpleDecls ci
+        decls         = snd <$> simpleDecls ci
         hasBody (SFun _ _ _ SNothing) = False
         hasBody _                     = True
 
@@ -87,9 +87,9 @@ method decl@(SFun name ps _ sexp) = do
   return $ Method attrs retType (cilName name) parameters (toList body)
   where attrs      = [MaStatic, MaAssembly]
         retType    = if isEntryPoint then Cil.Void else Cil.Object
-        parameters = map param ps
+        parameters = param <$> ps
         param n    = Param Nothing Cil.Object (cilName n)
-        locals lc  = fromList [localsInit $ map local [0..(lc - 1)] | lc > 0]
+        locals lc  = fromList [localsInit $ local <$> [0..(lc - 1)] | lc > 0]
         local i    = Local Cil.Object ("l" <> show i)
         isEntryPoint = name == entryPointName
         removeLastTailCall :: [MethodDecl] -> [MethodDecl]
@@ -101,13 +101,13 @@ data CilExport = CilFun  !MethodDef
                | CilType !TypeDef
 
 exportedTypes :: CodegenInfo -> [TypeDef]
-exportedTypes ci = concatMap exports (exportDecls ci)
+exportedTypes ci = exportDecls ci >>= exports
   where exports :: ExportIFace -> [TypeDef]
         exports (Export (NS (UN (T.unpack -> "FFI_CIL")) _) exportedDataType es) =
-            let cilExports = map cilExport es
+            let cilExports = cilExport <$> es
                 (cilFuns, cilTypes) = partition isCilFun cilExports
-                methods = map (\(CilFun m) -> m) cilFuns
-                types   = map (\(CilType t) -> t) cilTypes
+                methods = (\(CilFun m) -> m) <$> cilFuns
+                types   = (\(CilType t) -> t) <$> cilTypes
             in publicClass exportedDataType methods : types
           where isCilFun (CilFun _) = True
                 isCilFun _          = False
@@ -121,9 +121,9 @@ cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun f
         alias      = case desc of
                        FApp (UN (T.unpack -> "CILExport")) (FStr a:_) -> a
                        _ -> ""
-        invocation = loadArgs <> [ call [] Cil.Object "" moduleName (cilName fn) (map (const Cil.Object) ps) ]
-        loadArgs   = concatMap loadArg (zip [0..] paramTypes)
-        paramTypes = map foreignType ps
+        invocation = loadArgs <> [ call [] Cil.Object "" moduleName (cilName fn) (const Cil.Object <$> ps) ]
+        loadArgs   = zip [0..] paramTypes >>= loadArg
+        paramTypes = foreignType <$> ps
         retType    = foreignType rt
         io         = isIO rt
 
@@ -227,7 +227,7 @@ cil (SApp isTailCall n args) = do
   if isTailCall
     then tell [ tailcall app, ret, ldnull ]
     else tell [ app ]
-  where app = call [] Cil.Object "" moduleName (cilName n) (map (const Cil.Object) args)
+  where app = call [] Cil.Object "" moduleName (cilName n) (const Cil.Object <$> args)
 
 cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
   where emit :: CILForeign -> CilCodegen ()
@@ -239,7 +239,7 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
           tell [ ldc i
                , box t ]
         emit ffi     = do
-          mapM_ loadLVar (zip (map snd args) sig)
+          mapM_ loadLVar (zip (snd <$> args) sig)
           case ffi of
             CILConstructor ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
@@ -268,7 +268,7 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
         acceptBoxOrPush Void              = tell [ loadNothing ]
         acceptBoxOrPush t | isValueType t = tell [ box t ]
         acceptBoxOrPush _                 = return ()
-        sig                               = map (foreignType . fst) args
+        sig                               = foreignType . fst <$> args
         retType                           = foreignType retDesc
 
 cil e = unsupported "expression" e
@@ -296,7 +296,7 @@ delegateMethodFor fft = do
     _ -> do
       let fn = "delegate" <> show (M.size delegates)
       let ForeignFunctionType{..} = fft
-      let invocation = ldarg 0 : concatMap (\arg -> loadArg arg <> [apply0]) (zip [1..] parameterTypes)
+      let invocation = ldarg 0 : (zip [1..] parameterTypes >>= (<> [apply0]) . loadArg)
       let f = delegateFunction [MaAssembly] returnType fn parameterTypes returnTypeIO invocation
       put $ st { delegates = M.insert fft f delegates }
       return fn
@@ -402,7 +402,7 @@ cgCase check v alts = cgSwitchCase check v alts loadTag altTag
 cgSwitchCase :: Bool -> LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
 cgSwitchCase check val alts loadTag altTag | canBuildJumpTable alts = do
   labelPrefix <- gensym "L"
-  let labels = map ((labelPrefix <>) . show) [0..(length alts - 1)]
+  let labels = (labelPrefix <>) . show <$> [0..(length alts - 1)]
   endLabel <- gensym "END"
   load val
   loadTag
@@ -497,7 +497,7 @@ cgOp LStrLen [s] = do
 
 cgOp LStrConcat args = do
   forM_ args loadString
-  tell [ call [] String "mscorlib" "System.String" "Concat" (map (const String) args) ]
+  tell [ call [] String "mscorlib" "System.String" "Concat" (const String <$> args) ]
 
 cgOp LStrCons [h, t] = do
   loadAs Char h
@@ -513,7 +513,7 @@ cgOp LStrSubstr [index, count, s] = do
 
 cgOp LStrEq args = do
   forM_ args loadString
-  tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (map (const String) args)
+  tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (const String <$> args)
        , boxInt32 ] -- strange but correct
 
 cgOp LStrHead [v] = do
@@ -737,7 +737,7 @@ boolFalse = NS (UN "False") ["Bool", "Prelude"]
 boolTrue  = NS (UN "True")  ["Bool", "Prelude"]
 
 quoted :: String -> String
-quoted n = "'" <> concatMap validChar n <> "'"
+quoted name = "'" <> (name >>= validChar) <> "'"
   where validChar :: Char -> String
         validChar c = if c == '\''
                          then "\\'"
