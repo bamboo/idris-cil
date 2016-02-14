@@ -13,7 +13,7 @@ addons:
 before_install:
 - export PATH=/opt/ghc/7.10.3/bin:/opt/alex/3.1.3/bin:/opt/happy/1.19.3/bin:/opt/cabal/1.22/bin:$PATH
 install:
-- cabal --version
+- cabal update
 - git clone --depth 1 https://github.com/idris-lang/Idris-dev.git vendor/idris
 - git clone --depth 1 https://github.com/bamboo/language-cil.git --branch idris-cil --single-branch vendor/language-cil
 script:
