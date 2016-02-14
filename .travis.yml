@@ -1,6 +1,4 @@
 sudo: false
-language: haskell
-ghc: 7.8
 addons:
   apt:
     sources:
