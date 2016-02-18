@@ -11,6 +11,7 @@ module IRTS.Cil.FFI
 
 import qualified Data.HashMap.Strict as HM
 import           Data.Maybe
+import           Data.Monoid ((<>))
 import           Data.Text hiding (map, init, last)
 
 import           IRTS.Lang (FDesc(..))
@@ -52,7 +53,7 @@ parseDescriptor (FApp ffi [ty])
   | ffi == sUN "CILTypeOf"         = CILTypeOf (foreignType ty)
 parseDescriptor (FApp ffi [ty, FStr i])
   | ffi == sUN "CILEnumValueOf"    = CILEnumValueOf (foreignType ty) (read i)
-parseDescriptor e = error $ "invalid foreign descriptor: " ++ show e
+parseDescriptor e = error $ "invalid foreign descriptor: " <> show e
 
 isIO :: FDesc -> Bool
 isIO (FIO _) = True
@@ -91,7 +92,7 @@ foreignType (FApp cilTy [_, FCon (UN cilIntTy)])
     in case intName of
          "CIL_IntChar"   -> Char
          "CIL_IntNative" -> Int32
-         _               -> error $ "Unsupported foreign int type `" ++ intName ++ "'"
+         _               -> error $ "Unsupported foreign int type `" <> intName <> "'"
 
 foreignType (FApp cilTy [def, typeArgs])
   | cilTy == sUN "CILTyGen" = let (ReferenceType assembly typeName) = cilTyDef
@@ -102,17 +103,17 @@ foreignType (FApp cilTy [def, typeArgs])
 foreignType (FApp cilTy [FStr paramIndex])
   | cilTy == sUN "CILTyGenParam" = GenericType (read paramIndex)
 
-foreignType d = error $ "invalid type descriptor: " ++ show d
+foreignType d = error $ "invalid type descriptor: " <> show d
 
 foreignTypeList :: FDesc -> [CILTy]
-foreignTypeList = map foreignType . foreignList
+foreignTypeList = (foreignType <$>) . foreignList
 
 foreignList :: FDesc -> [FDesc]
 foreignList (FApp tag [_, x, xs])
   | tag == sUN "::"  = x : foreignList xs
 foreignList (FApp tag [_])
   | tag == sUN "Nil" = []
-foreignList d        = error $ "invalid foreign list: " ++ show d
+foreignList d        = error $ "invalid foreign list: " <> show d
 
 assemblyNameAndTypeFrom :: PrimitiveType -> (String, String)
 assemblyNameAndTypeFrom (ReferenceType assemblyName typeName) = (assemblyName, typeName)
@@ -120,7 +121,7 @@ assemblyNameAndTypeFrom (ValueType     assemblyName typeName) = (assemblyName, t
 assemblyNameAndTypeFrom gti@GenericReferenceTypeInstance{}    = ("", pr gti "")
 assemblyNameAndTypeFrom String = ("", "string")
 assemblyNameAndTypeFrom Object = ("", "object")
-assemblyNameAndTypeFrom t = error $ "unsupported assembly name for: " ++ show t
+assemblyNameAndTypeFrom t = error $ "unsupported assembly name for: " <> show t
 
 foreignTypeByName :: Name -> PrimitiveType
 foreignTypeByName (UN typeName) =
@@ -130,7 +131,7 @@ foreignTypeByName (UN typeName) =
 foreignTypeByName n = unsupportedForeignType $ show n
 
 unsupportedForeignType :: String -> a
-unsupportedForeignType = error . ("Unsupported foreign type: " ++)
+unsupportedForeignType = error . ("Unsupported foreign type: " <>)
 
 foreignTypes :: HM.HashMap Text PrimitiveType
 foreignTypes = HM.fromList [("CIL_Str",   String)
@@ -157,7 +158,7 @@ parseForeignFunctionType (FApp n [_, _, fnT]) | n == sUN "CIL_FnT" =
   let ft = functionType fnT
       retType = last ft
       io = case retType of { CILFnIO _ -> True; _ -> False }
-  in ForeignFunctionType (map unCILFn (init ft)) (unCILFn retType) io
+  in ForeignFunctionType (unCILFn <$> init ft) (unCILFn retType) io
 parseForeignFunctionType d = functionTypeError d
 
 functionType :: FDesc -> [CILFn]
@@ -167,4 +168,4 @@ functionType (FApp n [_, ret])        | n == sUN "CIL_FnBase" = [CILFn (foreignT
 functionType d = functionTypeError d
 
 functionTypeError :: FDesc -> a
-functionTypeError d = error $ "foreign function signature: " ++ show d
+functionTypeError d = error $ "foreign function signature: " <> show d
