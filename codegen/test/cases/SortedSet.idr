@@ -19,7 +19,7 @@ Nil = SortedSet.empty
 Cells : Type
 Cells = SortedSet Cell
 
-instance Show Cells where
+Show Cells where
   show = show . SortedSet.toList
 
 merge : Cells -> Cells -> Cells

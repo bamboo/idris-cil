@@ -6,7 +6,7 @@ module Main
 
 data V a = A a
 
-instance Show a => Show (V a) where
+Show a => Show (V a) where
   show (A a) = "A " ++ show a
 
 main : IO ()

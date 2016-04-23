@@ -7,7 +7,7 @@
 8
 -}
 
-instance Show Ordering where
+Show Ordering where
   show LT = "<"
   show GT = ">"
   show EQ = "="
