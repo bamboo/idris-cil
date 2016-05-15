@@ -9,7 +9,7 @@ import           Control.Monad.State.Strict
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
-import           Data.DList (DList, fromList, toList, append)
+import           Data.DList (DList, empty, singleton, fromList, toList, append)
 import           Data.Function (on)
 import           Data.List (partition, sortBy)
 import qualified Data.Map.Strict as M
@@ -394,10 +394,26 @@ cgCase check v alts@(SConstCase{} : _) = cgSwitchCase check v alts loadTag altTa
         altTag (SConstCase (I t) _) = t
         altTag alt = error $ "expecting (SConstCase (I t)) got: " <> show alt
 
-cgCase check v alts = cgSwitchCase check v alts loadTag altTag
-  where loadTag = loadRecordTag
+cgCase check v alts = cgSwitchCase check v consecutiveAlts loadTag altTag
+  where consecutiveAlts = let (caseAlts, defaultAlts) = span isSConCase alts
+                          in fillInTheGaps altTag unreachableAlt caseAlts ++ defaultAlts
+        unreachableAlt tag = SConCase 0 tag unreachableName [] SNothing
+        loadTag = loadRecordTag
         altTag (SConCase _ t _ _ _) = t
         altTag alt = error $ "expecting SConCase got: " <> show alt
+
+isSConCase :: SAlt -> Bool
+isSConCase SConCase{} = True
+isSConCase _          = False
+
+unreachableName :: Name
+unreachableName = UN "unreachable!"
+
+fillInTheGaps :: (a -> Int) -> (Int -> a) -> [a] -> [a]
+fillInTheGaps extract create = go empty
+  where go acc (i:j:is) = let gap = [(extract i + 1)..(extract j - 1)]
+                          in go (acc <> singleton i <> fromList (create <$> gap)) (j:is)
+        go acc rest     = toList acc <> rest
 
 cgSwitchCase :: Bool -> LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
 cgSwitchCase check val alts loadTag altTag | canBuildJumpTable alts = do
