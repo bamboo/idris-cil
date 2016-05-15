@@ -428,7 +428,12 @@ cgSwitchCase check val alts loadTag altTag | canBuildJumpTable alts = do
         canBuildJumpTable' t (a:as) | t' == t + 1 = canBuildJumpTable' t' as where t' = altTag a
         canBuildJumpTable' _ _                    = False
         baseTag = altTag (head alts)
-cgSwitchCase _ _ _ _ alts = unsupported "switch case alternatives" alts
+cgSwitchCase _ _ alts _ _ = unsupported "switch case alternatives" (descAlt <$> alts)
+
+descAlt :: SAlt -> String
+descAlt (SConCase _ t _ _ _) = "SConCase " <> show t
+descAlt (SConstCase t _) = "SConstCase " <> show t
+descAlt (SDefaultCase _) = "SDefaultCase"
 
 cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
 cgAlt end v (l, alt) = do
