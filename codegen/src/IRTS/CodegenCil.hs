@@ -401,8 +401,8 @@ cgCase check v alts = cgSwitchCase check v alts loadTag altTag
 
 cgSwitchCase :: Bool -> LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
 cgSwitchCase check val alts loadTag altTag | canBuildJumpTable alts = do
-  labelPrefix <- gensym "L"
-  let labels = (labelPrefix <>) . show <$> [0..(length alts - 1)]
+  uniqueLabelPrefix <- gensym "L"
+  let labels = (uniqueLabelPrefix <>) . show <$> [0..(length alts - 1)]
   endLabel <- gensym "END"
   load val
   loadTag
