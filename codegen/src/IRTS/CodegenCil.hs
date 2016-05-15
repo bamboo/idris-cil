@@ -411,8 +411,8 @@ unreachableName = UN "unreachable!"
 
 fillInTheGaps :: (a -> Int) -> (Int -> a) -> [a] -> [a]
 fillInTheGaps extract create = go empty
-  where go acc (i:j:is) = let gap = [(extract i + 1)..(extract j - 1)]
-                          in go (acc <> singleton i <> fromList (create <$> gap)) (j:is)
+  where go acc (i:j:rest) = let gap = [(extract i + 1)..(extract j - 1)]
+                            in go (acc <> singleton i <> fromList (create <$> gap)) (j:rest)
         go acc rest     = toList acc <> rest
 
 cgSwitchCase :: Bool -> LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
