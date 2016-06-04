@@ -25,5 +25,5 @@ script:
 - cd ../../rts
 - idris --install cil.ipkg
 - cd ../codegen
-- cabal install --only-dependencies --enable-tests -j2 && cabal configure --enable-tests
-- cabal build && cabal test --show-details=streaming --test-options="--color" -j2
+- cabal install -v3 --only-dependencies --enable-tests -j2 && cabal configure -v3 --enable-tests
+- cabal build -v3 && cabal test -v3 --show-details=streaming --test-options="--color" -j2
