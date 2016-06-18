@@ -27,6 +27,5 @@ before_install:
 
 script:
   - cd codegen
-  - ../travis_long stack --no-terminal --skip-ghc-check install idris --verbose
-  - cd ../rts && idris --install cil.ipkg && cd ../codegen
-  - stack --no-terminal --skip-ghc-check test --verbose
+  - ../travis_long stack --no-terminal --skip-ghc-check install idris
+  - ../travis_long stack --no-terminal --skip-ghc-check test

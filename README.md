@@ -35,11 +35,6 @@ It's important that the version of the Idris executable matches the version used
 	stack install idris
 	stack install
 
-The runtime system is required for the FFI (and to run the tests):
-
-	cd rts
-	idris --install cil.ipkg
-
 ## Contributing
 
 Issue reports and PRs are welcome.
