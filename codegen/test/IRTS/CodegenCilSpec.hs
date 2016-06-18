@@ -77,7 +77,7 @@ codegenInfoFrom inputs output = do
   elabPrims
   _ <- loadInputs inputs Nothing
   mainProg <- elabMain
-  compile (Via "cil") output (Just mainProg)
+  compile (Via IBCFormat "cil") output (Just mainProg)
 
 mono :: String -> IO String
 mono exe = if os == "mingw32"

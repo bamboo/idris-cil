@@ -44,7 +44,7 @@ executable idris-codegen-cil
                     , directory
                     , filepath
                     , haskeline
-                    , idris >= 0.9.20
+                    , idris >= 0.11.2
                     , mtl
                     , text
                     , transformers
@@ -74,7 +74,7 @@ test-suite spec
                   , hspec-expectations-pretty-diff
                   , smallcheck
                   , hspec-smallcheck
-                  , idris >= 0.9.20
+                  , idris >= 0.11.2
                   , idris-cil
 
 test-suite hlint

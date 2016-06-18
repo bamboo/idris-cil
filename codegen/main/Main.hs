@@ -38,5 +38,5 @@ cilMain opts = do
   elabPrims
   _ <- loadInputs (inputs opts) Nothing
   mainProg <- elabMain
-  ir <- compile (Via "cil") (output opts) (Just mainProg)
+  ir <- compile (Via IBCFormat "cil") (output opts) (Just mainProg)
   runIO $ codegenCil ir
