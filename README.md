@@ -26,12 +26,12 @@ idris --codegen cil Main.idr -o HelloWorld.exe \
 
 The resulting assemblies can also be used with .NET or Unity.
 
-## Building
+## Installing
 
 It's important that the version of the Idris executable matches the version used to build idris-cil:
 
 	git clone git@github.com:bamboo/idris-cil
-	cd codegen
+	cd idris-cil
 	stack install idris
 	stack install
 
