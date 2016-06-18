@@ -1,5 +1,6 @@
 dist
-cabal.sandbox.config
+.stack-work
+TAGS
 *.exe
 *.ibc
 *.il

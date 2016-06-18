@@ -1,29 +1,32 @@
 sudo: false
+
+# Caching so the next build will be fast too.
+cache:
+  directories:
+    - ~/.stack
+    - ~/.local
+  apt: true
+
 addons:
   apt:
     sources:
       - hvr-ghc
     packages:
-      - cabal-install-1.22
       - ghc-7.10.3
-      - happy-1.19.3
-      - alex-3.1.3
       - mono-devel
       - mono-utils
+
 before_install:
-- export PATH=/opt/ghc/7.10.3/bin:/opt/alex/3.1.3/bin:/opt/happy/1.19.3/bin:/opt/cabal/1.22/bin:/home/travis/.cabal/bin:$PATH
-install:
-- cabal update
-- git clone --depth 1 https://github.com/idris-lang/Idris-dev.git vendor/idris
-- git clone --depth 1 https://github.com/bamboo/language-cil.git --branch idris-cil --single-branch vendor/language-cil
+  # Add ghc to the PATH
+  - export PATH=/opt/ghc/7.10.3/bin:$PATH
+  # Download and unpack the stack executable
+  - mkdir -p ~/.local/bin
+  - export PATH=$HOME/.local/bin:$PATH
+  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+  - curl -L https://raw.githubusercontent.com/futurice/fum2github/3a270cf7a3b600900c1a8ed07c23d5f3ba8b115d/travis_long > travis_long && chmod +x travis_long
+
 script:
-- cd vendor/language-cil && cabal install --only-dependencies -j2 && cabal install
-- cd ../idris && cabal install --only-dependencies -j2 && cabal configure && cabal install -j2 --disable-documentation --disable-tests -v3 --ghc-option=-O0
-# - cd ../../ciltree
-# - cabal install --only-dependencies --enable-tests -j2 && cabal configure --enable-tests
-# - cabal test --show-details=streaming --test-options="--color" -j2
-- cd ../../rts
-- idris --install cil.ipkg
-- cd ../codegen
-- cabal install -v3 --only-dependencies --enable-tests -j2 && cabal configure -v3 --enable-tests
-- cabal build -v3 && cabal test -v3 --show-details=streaming --test-options="--color" -j2
+  - cd codegen
+  - ../travis_long stack --no-terminal --skip-ghc-check install idris --verbose
+  - cd ../rts && idris --install cil.ipkg && cd ../codegen
+  - stack --no-terminal --skip-ghc-check test --verbose

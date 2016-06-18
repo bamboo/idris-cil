@@ -28,26 +28,17 @@ The resulting assemblies can also be used with .NET or Unity.
 
 ## Building
 
-The build currently depends on a patched version of [language-cil](https://github.com/tomlokhorst/language-cil).
+It's important that the version of the Idris executable matches the version used to build idris-cil:
 
-```
-git clone git@github.com:bamboo/language-cil --branch idris-cil --single-branch language-cil
-cd language-cil
-cabal sandbox init --sandbox ../sandbox
-cabal install --only-dependencies
-cabal install
-cd ..
+	git clone git@github.com:bamboo/idris-cil
+	cd codegen
+	stack install idris
+	stack install
 
-git clone git@github.com:bamboo/idris-cil
-cd idris-cil/rts
-idris --install cil.ipkg
-cd ../codegen
-cabal sandbox init --sandbox ../../sandbox
-cabal install --only-dependencies --enable-tests
-cabal configure --enable-tests
-cabal test
-cabal install
-```
+The runtime system is required for the FFI (and to run the tests):
+
+	cd rts
+	idris --install cil.ipkg
 
 ## Contributing
 
