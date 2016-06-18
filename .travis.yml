@@ -27,5 +27,5 @@ before_install:
 
 script:
   - cd codegen
-  - ../travis_long stack --no-terminal --skip-ghc-check install idris
-  - ../travis_long stack --no-terminal --skip-ghc-check test
+  - ../travis_long stack +RTS -N2 -RTS --no-terminal --skip-ghc-check install idris
+  - ../travis_long stack +RTS -N2 -RTS --no-terminal --skip-ghc-check test
