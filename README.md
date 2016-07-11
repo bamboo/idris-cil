@@ -41,4 +41,6 @@ Issue reports and PRs are welcome.
 
 Brought to you by @bamboo, @sangamon and [contributors](https://github.com/bamboo/idris-cil/graphs/contributors).
 
+## License
 
+[![BSD3](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
