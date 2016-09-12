@@ -1,5 +1,5 @@
 name:                idris-cil
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            A Common Intermediate Language backend for Idris.
 description:         A Common Intermediate Language backend for Idris.
 homepage:            https://github.com/bamboo/idris-cil
@@ -28,7 +28,7 @@ library
                   , directory
                   , dlist >= 0.7.1.1
                   , filepath
-                  , idris >= 0.10
+                  , idris >= 0.12.2
                   , language-cil >= 0.3.1
                   , mtl
                   , process
@@ -44,7 +44,7 @@ executable idris-codegen-cil
                     , directory
                     , filepath
                     , haskeline
-                    , idris >= 0.11.2
+                    , idris >= 0.12.2
                     , mtl
                     , text
                     , transformers
@@ -74,7 +74,7 @@ test-suite spec
                   , hspec-expectations-pretty-diff
                   , smallcheck
                   , hspec-smallcheck
-                  , idris >= 0.11.2
+                  , idris >= 0.12.2
                   , idris-cil
 
 test-suite hlint

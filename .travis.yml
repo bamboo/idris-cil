@@ -12,13 +12,13 @@ addons:
     sources:
       - hvr-ghc
     packages:
-      - ghc-7.10.3
+      - ghc-8.0.1
       - mono-devel
       - mono-utils
 
 before_install:
   # Add ghc to the PATH
-  - export PATH=/opt/ghc/7.10.3/bin:$PATH
+  - export PATH=/opt/ghc/8.0.1/bin:$PATH
   # Download and unpack the stack executable
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH

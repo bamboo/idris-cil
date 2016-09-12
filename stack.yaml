@@ -1,8 +1,9 @@
-resolver: lts-6.3
-
+resolver: nightly-2016-09-12
 packages:
   - location: .
   - location:
       git: https://github.com/tomlokhorst/language-cil.git
       commit: 3b005fa8f4c48882927ddcf5316455b281731b99
     extra-dep: true
+extra-deps:
+  - bool-extras-0.4.0
