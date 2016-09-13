@@ -11,6 +11,7 @@ addons:
   apt:
     sources:
       - hvr-ghc
+      - mono-nightly
     packages:
       - ghc-8.0.1
       - mono-devel
