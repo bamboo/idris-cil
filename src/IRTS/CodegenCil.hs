@@ -9,7 +9,7 @@ import           Control.Monad.State.Strict
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
-import           Data.DList (DList, empty, singleton, fromList, toList, append)
+import           Data.DList (DList, empty, singleton, fromList, toList)
 import           Data.Function (on)
 import           Data.List (partition, sortBy)
 import qualified Data.Map.Strict as M
@@ -74,15 +74,15 @@ method decl@(SFun name ps _ sexp) = do
   let (CodegenState _ lc delegates', cilForSexp) = cilFor delegates decl sexp
       body = if isEntryPoint
              then
-               [entryPoint]
-                 `append` locals lc
-                 `append` fromList (removeLastTailCall $ toList cilForSexp)
-                 `append` [pop, ret]
+               mconcat [ [entryPoint]
+                       , locals lc
+                       , fromList (removeLastTailCall $ toList cilForSexp)
+                       , [pop, ret] ]
              else
-               [comment (show decl)]
-                 `append` locals lc
-                 `append` cilForSexp
-                 `append` [ret]
+               mconcat [ [comment (show decl)]
+                       , locals lc
+                       , cilForSexp
+                       , [ret] ]
   put delegates'
   return $ Method attrs retType (cilName name) parameters (toList body)
   where attrs      = [MaStatic, MaAssembly]
