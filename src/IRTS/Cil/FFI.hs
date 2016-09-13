@@ -1,13 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 module IRTS.Cil.FFI
-       ( parseDescriptor
-       , parseForeignFunctionType
-       , assemblyNameAndTypeFrom
-       , foreignType
-       , isIO
-       , CILForeign(..)
-       , ForeignFunctionType(..)
-       ) where
+  ( parseDescriptor
+  , parseForeignFunctionType
+  , assemblyNameAndTypeFrom
+  , foreignType
+  , isIO
+  , CILForeign(..)
+  , ForeignFunctionType(..)
+  ) where
 
 import qualified Data.HashMap.Strict as HM
 import           Data.Maybe
@@ -16,23 +16,25 @@ import           Data.Text hiding (map, init, last)
 
 import           IRTS.Lang (FDesc(..))
 import           Idris.Core.TT (Name(..), sUN)
+
 import           Language.Cil (PrimitiveType(..))
 import           Language.Cil.Pretty (pr)
 
 type CILTy = PrimitiveType
 
-data CILForeign = CILInstance       !String
-                | CILInstanceCustom !String ![CILTy] !CILTy
-                | CILInstanceField  !String
-                | CILStatic         !CILTy !String
-                | CILStaticField    !CILTy !String
-                | CILConstructor
-                | CILTypeOf         !CILTy
-                | CILDelegate       !CILTy
-                | CILEnumValueOf    !CILTy !Integer
-                | CILExport         !String
-                | CILDefault
-                deriving Show
+data CILForeign
+  = CILInstance       !String
+  | CILInstanceCustom !String ![CILTy] !CILTy
+  | CILInstanceField  !String
+  | CILStatic         !CILTy !String
+  | CILStaticField    !CILTy !String
+  | CILConstructor
+  | CILTypeOf         !CILTy
+  | CILDelegate       !CILTy
+  | CILEnumValueOf    !CILTy !Integer
+  | CILExport         !String
+  | CILDefault
+  deriving Show
 
 parseDescriptor :: FDesc -> CILForeign
 parseDescriptor (FApp ffi [declType, FStr fn])
@@ -134,20 +136,22 @@ unsupportedForeignType :: String -> a
 unsupportedForeignType = error . ("Unsupported foreign type: " <>)
 
 foreignTypes :: HM.HashMap Text PrimitiveType
-foreignTypes = HM.fromList [("CIL_Str",   String)
-                           ,("CIL_Ptr",   Object)
-                           ,("CIL_Float", Float32)
-                           ,("CIL_Bool",  Bool)
-                           ,("CIL_Unit",  Void)
+foreignTypes = HM.fromList [ ("CIL_Str",   String)
+                           , ("CIL_Ptr",   Object)
+                           , ("CIL_Float", Float32)
+                           , ("CIL_Bool",  Bool)
+                           , ("CIL_Unit",  Void)
                            ]
 
-data ForeignFunctionType = ForeignFunctionType { parameterTypes :: ![PrimitiveType]
-                                               , returnType     :: !PrimitiveType
-                                               , returnTypeIO   :: !Bool }
-                           deriving (Eq, Ord, Show)
+data ForeignFunctionType
+  = ForeignFunctionType { parameterTypes :: ![PrimitiveType]
+                        , returnType     :: !PrimitiveType
+                        , returnTypeIO   :: !Bool }
+  deriving (Eq, Ord, Show)
 
-data CILFn = CILFnIO !PrimitiveType
-           | CILFn   !PrimitiveType
+data CILFn
+  = CILFnIO !PrimitiveType
+  | CILFn   !PrimitiveType
 
 unCILFn :: CILFn -> PrimitiveType
 unCILFn (CILFnIO t) = t
