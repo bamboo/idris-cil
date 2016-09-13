@@ -15,20 +15,16 @@ import           Data.List (partition, sortBy)
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import           GHC.Float
-import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
-import           System.Process (readProcess)
-
+import           IRTS.Cil.FFI
 import           IRTS.CodegenCommon
 import           IRTS.Lang
 import           IRTS.Simplified
 import           Idris.Core.CaseTree (CaseType(Shared))
 import           Idris.Core.TT
-
 import           Language.Cil
 import qualified Language.Cil as Cil
-
-import           IRTS.Cil.FFI
---import           IRTS.Cil.UnreachableCodeRemoval
+import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
+import           System.Process (readProcess)
 
 codegenCil :: CodeGenerator
 codegenCil ci = do writeFileUTF8 cilFile cilText
@@ -261,9 +257,11 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
               in tell [ ldsfld   retType assemblyName typeName fn ]
             _ -> error $ "unsupported ffi descriptor: " <> show ffi
           acceptBoxOrPush retType
+
         loadLVar :: (LVar, PrimitiveType) -> CilCodegen ()
         loadLVar (loc, t) = do load loc
                                castOrUnbox t
+
         acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
         acceptBoxOrPush Void              = tell [ loadNothing ]
         acceptBoxOrPush t | isValueType t = tell [ box t ]
@@ -596,8 +594,7 @@ cgOp (LExternal nul)        [] | nul == sUN "prim__null" = tell [ ldnull ]
 cgOp o _ = unsupported "operation" o
 
 primitiveToString :: LVar -> CilCodegen ()
-primitiveToString p = do load p
-                         tell [ objectToString ]
+primitiveToString p = load p >> tell [ objectToString ]
 
 objectToString :: MethodDecl
 objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
@@ -648,14 +645,10 @@ boxChar    = box Char
 boxBoolean = box Bool
 
 loadAs :: PrimitiveType -> LVar -> CilCodegen ()
-loadAs valueType l = do
-  load l
-  tell [ unbox_any valueType ]
+loadAs valueType l = load l >> tell [ unbox_any valueType ]
 
 loadString :: LVar -> CilCodegen ()
-loadString l = do
-  load l
-  tell [ castclass String ]
+loadString l = load l >> tell [ castclass String ]
 
 ldc :: (Integral n) => n -> MethodDecl
 ldc = ldc_i4 . fromIntegral
