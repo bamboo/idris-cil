@@ -30,7 +30,7 @@ Assembly = CIL AssemblyTy
 MethodInfo : Type
 MethodInfo = corlib "System.Reflection.MethodInfo"
 
-instance IsA Object MethodInfo where {}
+implementation IsA Object MethodInfo where {}
 
 GetExecutingAssembly : CIL_IO Assembly
 GetExecutingAssembly =
@@ -68,7 +68,7 @@ namespace System.Text
   StringBuilder : Type
   StringBuilder = corlib "System.Text.StringBuilder"
 
-  instance IsA Object StringBuilder where {}
+  implementation IsA Object StringBuilder where {}
 
   %inline
   invokeStringBuilder : String -> StringBuilder -> String -> CIL_IO StringBuilder
@@ -90,7 +90,7 @@ GuidTy = corlibTyVal "System.Guid"
 Guid : Type
 Guid = CIL $ GuidTy
 
-instance IsA Object Guid where {}
+implementation IsA Object Guid where {}
 
 NewGuid : CIL_IO Guid
 NewGuid =
