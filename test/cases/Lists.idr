@@ -2,6 +2,9 @@
 2
 1
 2
+1
+3
+4
 -}
 module Main
 
@@ -15,7 +18,7 @@ printList (x :: xs) = putStrLn x *> printList xs
 printList []        = pure ()
 
 main : IO ()
-main = printList $ (show . length') <$> lists
--- TODO: printList $ map show $ sort [3, 4, 1]
+main = do printList $ (show . length') <$> lists
+          printList $ show <$> sort [3, 4, 1]
   where lists : List (List Nat)
         lists = [[1..l] | l <- [0..2]]

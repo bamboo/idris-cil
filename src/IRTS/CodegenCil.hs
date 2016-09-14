@@ -205,8 +205,8 @@ cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
 
 cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
                               in case defaultCase of
-                                   [] -> cgCase False v (sorted cases <> [SDefaultCase SNothing])
-                                   _  -> cgCase False v (sorted cases <> defaultCase)
+                                   [] -> cgCase v (sorted cases <> [SDefaultCase SNothing])
+                                   _  -> cgCase v (sorted cases <> defaultCase)
    where sorted = sortBy (compare `on` tag)
          tag (SConCase _ t _ _ _) = t
          tag (SConstCase (I t) _) = t
@@ -216,7 +216,7 @@ cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
          unsupportedCase c        = error $ show c <> " in\n" <> show e
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
-cil (SChkCase v alts) = cgCase True v alts
+cil (SChkCase v alts) = cgCase v alts
 
 cil (SApp isTailCall n args) = do
   forM_ args load
@@ -386,13 +386,13 @@ cgConst c = unsupported "const" c
   | Forgot
 -}
 
-cgCase :: Bool -> LVar -> [SAlt] -> CilCodegen ()
-cgCase check v alts@(SConstCase{} : _) = cgSwitchCase check v alts loadTag altTag
+cgCase :: LVar -> [SAlt] -> CilCodegen ()
+cgCase v alts@(SConstCase{} : _) = cgSwitchCase v alts loadTag altTag
   where loadTag = tell [ unbox_any Int32 ]
         altTag (SConstCase (I t) _) = t
         altTag alt = error $ "expecting (SConstCase (I t)) got: " <> show alt
 
-cgCase check v alts = cgSwitchCase check v consecutiveAlts loadTag altTag
+cgCase v alts = cgSwitchCase v consecutiveAlts loadTag altTag
   where consecutiveAlts = let (caseAlts, defaultAlts) = span isSConCase alts
                           in fillInTheGaps altTag unreachableAlt caseAlts ++ defaultAlts
         unreachableAlt tag = SConCase 0 tag unreachableName [] SNothing
@@ -413,27 +413,18 @@ fillInTheGaps extract create = go empty
                             in go (acc <> singleton i <> fromList (create <$> gap)) (j:rest)
         go acc rest     = toList acc <> rest
 
-cgSwitchCase :: Bool -> LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
-cgSwitchCase check val alts loadTag altTag | canBuildJumpTable alts = do
+cgSwitchCase :: LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
+cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
   uniqueLabelPrefix <- gensym "L"
   let labels = (uniqueLabelPrefix <>) . show <$> [0..(length alts - 1)]
   endLabel <- gensym "END"
   load val
   loadTag
   tell [ ldc baseTag
-       , sub ]
+       , sub
+       , switch labels
+       , br (last labels) ]
 
-  when check $ do
-    -- when caseIndex < 0 goto defaultCase
-    caseIndex <- gensym "caseIndex"
-    tell [ localsInit [ Local Int32 caseIndex ]
-         , stlocN caseIndex
-         , ldlocN caseIndex
-         , ldc_i4 0
-         , blt (last labels)
-         , ldlocN caseIndex ]
-
-  tell [ switch labels ]
   mapM_ (cgAlt endLabel val) (zip labels alts)
   tell [ label endLabel ]
   where canBuildJumpTable (a:as) = canBuildJumpTable' (altTag a) as
@@ -442,7 +433,7 @@ cgSwitchCase check val alts loadTag altTag | canBuildJumpTable alts = do
         canBuildJumpTable' t (a:as) | t' == t + 1 = canBuildJumpTable' t' as where t' = altTag a
         canBuildJumpTable' _ _                    = False
         baseTag = altTag (head alts)
-cgSwitchCase _ _ alts _ _ = unsupported "switch case alternatives" (descAlt <$> alts)
+cgSwitchCase _ alts _ _ = unsupported "switch case alternatives" (descAlt <$> alts)
 
 descAlt :: SAlt -> String
 descAlt (SConCase _ t _ _ _) = "SConCase " <> show t
