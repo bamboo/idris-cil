@@ -1,4 +1,4 @@
-resolver: nightly-2016-09-12
+resolver: lts-7.0
 packages:
   - location: .
   - location:
