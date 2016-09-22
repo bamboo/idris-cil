@@ -256,22 +256,38 @@ cil (SApp isTailCall n args) = do
 
 cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
   where emit :: CILForeign -> CilCodegen ()
+
         emit (CILDelegate t) =
           cilDelegate t retDesc args
+
         emit (CILTypeOf t) =
           cilTypeOf t
+
         emit (CILEnumValueOf t i) =
           tell [ ldc i
                , box t ]
-        emit ffi     = do
-          mapM_ loadLVar (zip (snd <$> args) sig)
+
+        emit (CILInstance fn) = do
+          let declType : paramTypes    = sig
+              (assemblyName, typeName) = assemblyNameAndTypeFrom declType
+          if isValueType declType
+             then do
+               let (receiverType, receiverArg) : effectiveArgs = typedArgs
+               receiver <- storeTemp receiverType receiverArg
+               tell [ ldlocaN receiver ]
+               mapM_ loadTypedArg effectiveArgs
+               tell [ call [CcInstance] retType assemblyName typeName fn paramTypes ]
+             else do
+               loadArgs
+               tell [ callvirt retType assemblyName typeName fn paramTypes ]
+          acceptBoxOrPush retType
+
+        emit ffi = do
+          loadArgs
           case ffi of
             CILConstructor ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
               in tell [ newobj   assemblyName typeName sig ]
-            CILInstance fn ->
-              let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
-              in tell [ callvirt retType assemblyName typeName fn (Prelude.tail sig) ]
             CILInstanceCustom fn sig' retType' ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
               in tell [ callvirt retType' assemblyName typeName fn sig' ]
@@ -287,9 +303,13 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
             _ -> error $ "unsupported ffi descriptor: " <> show ffi
           acceptBoxOrPush retType
 
-        loadLVar :: (LVar, PrimitiveType) -> CilCodegen ()
-        loadLVar (loc, t) = do load loc
-                               castOrUnbox t
+        loadArgs = mapM_ loadTypedArg typedArgs
+        typedArgs = zip sig (snd <$> args)
+
+        loadTypedArg :: (PrimitiveType, LVar) -> CilCodegen ()
+        loadTypedArg (t, loc) = do
+          load loc
+          castOrUnbox t
 
         acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
         acceptBoxOrPush Void              = tell [ loadNothing ]
