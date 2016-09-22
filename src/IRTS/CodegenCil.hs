@@ -203,6 +203,35 @@ cil (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
 
 cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
 
+cil (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
+  val <- gensym "val"
+  load v
+  tell [ localsInit [Local Char val]
+       , unbox_any Char
+       , stlocN val
+       ]
+  labels <- uniqueLabelsFor alts
+  endLabel <- gensym "END"
+  mapM_ (cgAlt endLabel val) (zip labels alts)
+  tell [ label endLabel ]
+  where
+    cgAlt :: String -> String -> (String, SAlt) -> CilCodegen ()
+    cgAlt end val (l, SConstCase (Ch t) e) = do
+      tell [ ldc $ ord t
+           , ldlocN val
+           , ceq
+           , brfalse l
+           ]
+      cil e
+      tell [ br end
+           , label l
+           ]
+    cgAlt end _ (l, SDefaultCase e) = do
+      cil e
+      tell [ br end ]
+    cgAlt _ _ (_, c) = unsupported "char case" c
+
+
 cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
                               in case defaultCase of
                                    [] -> cgCase v (sorted cases <> [SDefaultCase SNothing])
@@ -387,7 +416,7 @@ cgConst c = unsupported "const" c
 -}
 
 cgCase :: LVar -> [SAlt] -> CilCodegen ()
-cgCase v alts@(SConstCase{} : _) = cgSwitchCase v alts loadTag altTag
+cgCase v alts@(SConstCase (I _) _ : _) = cgSwitchCase v alts loadTag altTag
   where loadTag = tell [ unbox_any Int32 ]
         altTag (SConstCase (I t) _) = t
         altTag alt = error $ "expecting (SConstCase (I t)) got: " <> show alt
@@ -413,10 +442,14 @@ fillInTheGaps extract create = go empty
                             in go (acc <> singleton i <> fromList (create <$> gap)) (j:rest)
         go acc rest     = toList acc <> rest
 
+uniqueLabelsFor :: [a] -> CilCodegen [String]
+uniqueLabelsFor alts = do
+  uniqueLabelPrefix <- gensym "L"
+  pure $ (uniqueLabelPrefix <>) . show <$> [0..(length alts - 1)]
+
 cgSwitchCase :: LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
 cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
-  uniqueLabelPrefix <- gensym "L"
-  let labels = (uniqueLabelPrefix <>) . show <$> [0..(length alts - 1)]
+  labels <- uniqueLabelsFor alts
   endLabel <- gensym "END"
   load val
   loadTag
@@ -551,20 +584,10 @@ cgOp (LStrInt ITNative) [v] = do
 
 cgOp (LStrInt i) [_] = unsupported "LStrInt" i
 
--- cgOp (LChInt ITNative) [c] = do
---   load c
---   tell [ unbox_any systemChar
---        , boxInt32 ]
-
--- cgOp (LEq (ATInt ITChar)) args = do
---   forM_ args loadChar
---   tell [ ceq
---        , boxBoolean ]
-
--- cgOp (LSLt (ATInt ITChar)) args = do
---   forM_ args loadChar
---   tell [ clt
---        , boxBoolean ]
+cgOp (LChInt ITNative) [c] = do
+  load c
+  tell [ unbox_any Char
+       , boxInt32 ]
 
 cgOp (LSExt ITNative ITBig) [i]  = load i
 cgOp (LZExt ITNative ITBig) [i]  = load i
@@ -573,6 +596,7 @@ cgOp (LMinus (ATInt _))     args = intOp sub args
 cgOp (LTimes (ATInt _))     args = intOp mul args
 cgOp (LEq (ATInt ITChar))   args = primitiveOp Char Int32 ceq args
 cgOp (LEq (ATInt _))        args = intOp ceq args
+cgOp (LSLt (ATInt ITChar))  args = primitiveOp Char Int32 clt args
 cgOp (LSLt (ATInt _))       args = intOp clt args
 cgOp (LIntStr _)            [i]  = primitiveToString i
 cgOp (LIntFloat _)          [i]  = convert Int32 Float32 "ToSingle" i
@@ -582,7 +606,10 @@ cgOp (LPlus ATFloat)        args = floatOp add args
 cgOp (LMinus ATFloat)       args = floatOp sub args
 cgOp LFloatStr              [f]  = primitiveToString f
 cgOp (LExternal nul)        [] | nul == sUN "prim__null" = tell [ ldnull ]
-cgOp o _ = unsupported "operation" o
+cgOp o _ = unsupportedOp o
+
+unsupportedOp :: PrimFn -> CilCodegen ()
+unsupportedOp = unsupported "operation"
 
 primitiveToString :: LVar -> CilCodegen ()
 primitiveToString p = load p >> tell [ objectToString ]
