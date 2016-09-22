@@ -549,10 +549,38 @@ cgOp LStrCons [h, t] = do
   tell [ call [] String "mscorlib" "System.String" "Concat" [String, String] ]
 
 cgOp LStrSubstr [index, count, s] = do
-  loadString s
-  loadAs Int32 index
-  loadAs Int32 count
-  tell [ callvirt String "mscorlib" "System.String" "Substring" [Int32, Int32] ]
+  indexOutOfRange <- gensym "indexOutOfRange"
+  countInRange <- gensym "countInRange"
+  end <- gensym "end"
+  indexVar  <- storeTemp Int32 index
+  stringVar <- storeTemp String s
+  lengthVar <- gensym "length"
+  tell [ ldlocN stringVar
+       , callvirt Int32 "mscorlib" "System.String" "get_Length" []
+       , localsInit [ Local Int32 lengthVar ]
+       , stlocN lengthVar
+       , ldlocN indexVar
+       , ldlocN lengthVar
+       , bge indexOutOfRange ]
+  countVar <- storeTemp Int32 count
+  tell [ ldlocN countVar
+       , ldlocN indexVar
+       , add
+       , ldlocN lengthVar
+       , ble countInRange
+       , ldlocN lengthVar
+       , ldlocN indexVar
+       , sub
+       , stlocN countVar
+       , label countInRange
+       , ldlocN stringVar
+       , ldlocN indexVar
+       , ldlocN countVar
+       , callvirt String "mscorlib" "System.String" "Substring" [Int32, Int32]
+       , br end
+       , label indexOutOfRange
+       , ldstr ""
+       , label end ]
 
 cgOp LStrEq args = do
   forM_ args loadString
@@ -607,6 +635,14 @@ cgOp (LMinus ATFloat)       args = floatOp sub args
 cgOp LFloatStr              [f]  = primitiveToString f
 cgOp (LExternal nul)        [] | nul == sUN "prim__null" = tell [ ldnull ]
 cgOp o _ = unsupportedOp o
+
+storeTemp :: PrimitiveType -> LVar -> CilCodegen String
+storeTemp localType localVar = do
+  tempName <- gensym "temp"
+  loadAs localType localVar
+  tell [ localsInit [ Local localType tempName ]
+       , stlocN tempName ]
+  pure tempName
 
 unsupportedOp :: PrimFn -> CilCodegen ()
 unsupportedOp = unsupported "operation"

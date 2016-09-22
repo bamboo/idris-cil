@@ -8,8 +8,6 @@ foofoo
 oof
 oof
 (Hello)
--}
-{- TODO
 ()
 ( Idris)
 (s)
@@ -29,4 +27,4 @@ main : IO ()
 main = do
   test "foo" "bar"
   test "foo" "foo"
-  traverse_ testSubstr [(0, 5)] --TODO: , (20, 5), (6, 6), (11, 1), (11, 5)]
+  traverse_ testSubstr [(0, 5), (20, 5), (6, 6), (11, 1), (11, 5)]
