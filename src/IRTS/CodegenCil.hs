@@ -598,6 +598,12 @@ cgOp LStrTail [v] = do
   tell [ ldc_i4 1
        , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
 
+cgOp LStrIndex [s, i] = do
+  loadString s
+  loadAs Int32 i
+  tell [ callvirt Char "mscorlib" "System.String" "get_Chars" [Int32]
+       , boxChar ]
+
 cgOp (LStrInt ITNative) [v] = do
   val <- gensym "val"
   tell [ localsInit [ Local Int32 val ]

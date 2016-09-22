@@ -12,6 +12,11 @@ oof
 ( Idris)
 (s)
 (s!)
+'I'
+'d'
+'r'
+'i'
+'s'
 -}
 module Main
 
@@ -28,3 +33,4 @@ main = do
   test "foo" "bar"
   test "foo" "foo"
   traverse_ testSubstr [(0, 5), (20, 5), (6, 6), (11, 1), (11, 5)]
+  traverse_ (putStrLn . show . strIndex "Idris") [0..4]
