@@ -267,27 +267,20 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
           tell [ ldc i
                , box t ]
 
+        emit CILConstructor =
+          case retType of
+            Array _ -> emitNewArray retType
+            _       -> emitNewInstance
+
         emit (CILInstance fn) = do
-          let declType : paramTypes    = sig
-              (assemblyName, typeName) = assemblyNameAndTypeFrom declType
-          if isValueType declType
-             then do
-               let (receiverType, receiverArg) : effectiveArgs = typedArgs
-               receiver <- storeTemp receiverType receiverArg
-               tell [ ldlocaN receiver ]
-               mapM_ loadTypedArg effectiveArgs
-               tell [ call [CcInstance] retType assemblyName typeName fn paramTypes ]
-             else do
-               loadArgs
-               tell [ callvirt retType assemblyName typeName fn paramTypes ]
-          acceptBoxOrPush retType
+          let declType : paramTypes = sig
+          case declType of
+            Array _ -> emitArrayFFI declType fn
+            _       -> emitInstanceFFI declType fn paramTypes
 
         emit ffi = do
           loadArgs
           case ffi of
-            CILConstructor ->
-              let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
-              in tell [ newobj   assemblyName typeName sig ]
             CILInstanceCustom fn sig' retType' ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom $ head sig
               in tell [ callvirt retType' assemblyName typeName fn sig' ]
@@ -301,6 +294,42 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
               let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
               in tell [ ldsfld   retType assemblyName typeName fn ]
             _ -> error $ "unsupported ffi descriptor: " <> show ffi
+          acceptBoxOrPush retType
+
+        emitNewArray (Array elTy) = do
+          loadArgs
+          tell [ newarr elTy ]
+
+        emitArrayFFI (Array elTy) fn = do
+          loadArgs
+          case fn of
+            "get_Length" -> tell [ ldlen ]
+            "get_Item"   -> tell [ ldelemFor elTy ]
+            "set_Item"   -> tell [ stelemFor elTy ]
+            op           -> unsupported "array FFI" op
+          acceptBoxOrPush retType
+
+        ldelemFor Int32 = ldelem_i4
+        stelemFor Int32 = stelem_i4
+
+        emitNewInstance = do
+          loadArgs
+          let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
+          tell [ newobj   assemblyName typeName sig ]
+          acceptBoxOrPush retType
+
+        emitInstanceFFI declType fn paramTypes = do
+          let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
+          if isValueType declType
+             then do
+               let (receiverType, receiverArg) : effectiveArgs = typedArgs
+               receiver <- storeTemp receiverType receiverArg
+               tell [ ldlocaN receiver ]
+               mapM_ loadTypedArg effectiveArgs
+               tell [ call [CcInstance] retType assemblyName typeName fn paramTypes ]
+             else do
+               loadArgs
+               tell [ callvirt retType assemblyName typeName fn paramTypes ]
           acceptBoxOrPush retType
 
         loadArgs = mapM_ loadTypedArg typedArgs

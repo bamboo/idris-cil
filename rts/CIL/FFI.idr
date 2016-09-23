@@ -36,9 +36,17 @@ CILTyStr = CILTyRef "" "string"
 CILTyBool : CILTy
 CILTyBool = CILTyVal "" "bool"
 
+%inline
+CILTyInt32 : CILTy
+CILTyInt32 = CILTyVal "" "int"
+
 ||| A foreign CIL type.
 data CIL   : CILTy -> Type where
      MkCIL : (ty : CILTy) -> CIL ty
+
+||| A foreign CIL array type.
+data TypedArray   : CILTy -> Type -> Type where
+     MkTypedArray : (ty : CILTy) -> (elemTy : Type) -> TypedArray ty elemTy
 
 ||| A foreign descriptor.
 data CILForeign =
@@ -71,6 +79,7 @@ mutual
        CIL_IntNative : CIL_IntTypes Int
 
   data CIL_Types : Type -> Type where
+       CIL_Array : CIL_Types (TypedArray cilTy elTy)
        CIL_Str   : CIL_Types String
        CIL_Float : CIL_Types Double
        CIL_Ptr   : CIL_Types Ptr

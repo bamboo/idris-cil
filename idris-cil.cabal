@@ -12,6 +12,7 @@ build-type:          Custom
 extra-source-files:  README.md
                    , rts/*.ipkg
                    , rts/CIL/*.idr
+                   , rts/CIL/FFI/*.idr
 cabal-version:       >=1.18
 
 library

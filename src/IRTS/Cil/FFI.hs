@@ -66,6 +66,9 @@ foreignType (FStr exportedDataType) = ValueType "" exportedDataType
 foreignType (FCon t)                = foreignTypeByName t
 foreignType (FIO t)                 = foreignType t
 
+foreignType (FApp cilTy [_, ty])
+  | cilTy == sUN "CIL_Array" = foreignType ty
+
 foreignType (FApp cilTy [ty])
   | cilTy == sUN "CIL_CILT" = foreignType ty
 
@@ -86,6 +89,7 @@ foreignType (FApp cilTy [FStr assembly, FStr typeName])
   | cilTy == sUN "CILTyVal" =
     case (assembly, typeName) of
       ("", "bool") -> Bool
+      ("", "int")  -> Int32
       _            -> ValueType assembly typeName
 
 foreignType (FApp cilTy [_, FCon (UN cilIntTy)])
