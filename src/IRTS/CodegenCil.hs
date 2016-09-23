@@ -300,17 +300,32 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
           loadArgs
           tell [ newarr elTy ]
 
+        emitArrayFFI (Array elTy@ValueType{}) "set_Item" = do
+          let [ array, index, value ] = typedArgs
+          loadTypedArg array
+          loadTypedArg index
+          tell [ ldelema elTy ]
+          loadTypedArg value
+          tell [ stobj elTy
+               , loadNothing ]
+
         emitArrayFFI (Array elTy) fn = do
           loadArgs
           case fn of
             "get_Length" -> tell [ ldlen ]
-            "get_Item"   -> tell [ ldelemFor elTy ]
+            "get_Item"   -> tell $ ldelemFor elTy
             "set_Item"   -> tell [ stelemFor elTy ]
             op           -> unsupported "array FFI" op
           acceptBoxOrPush retType
 
-        ldelemFor Int32 = ldelem_i4
+        ldelemFor :: PrimitiveType -> CodegenOutput
+        ldelemFor Int32 = [ ldelem_i4 ]
+        ldelemFor ty@ValueType{} = [ ldelema ty
+                                   , ldobj ty ]
+        ldelemFor ty    = error $ "No ldelem for " ++ show ty
+
         stelemFor Int32 = stelem_i4
+        stelemFor ty    = error $ "No stelem for " ++ show ty
 
         emitNewInstance = do
           loadArgs

@@ -1,6 +1,9 @@
 resolver: lts-7.0
 packages:
   - location: .
+  - location:
+      git: https://github.com/bamboo/language-cil.git
+      commit: b2cd0ed341188d3640e077669a2f154123d763e8
+    extra-dep: true
 extra-deps:
   - bool-extras-0.4.0
-  - language-cil-0.4.0
