@@ -703,7 +703,10 @@ cgOp (LSDiv ATFloat)        args = floatOp Cil.div args
 cgOp (LPlus ATFloat)        args = floatOp add args
 cgOp (LMinus ATFloat)       args = floatOp sub args
 cgOp LFloatStr              [f]  = primitiveToString f
-cgOp (LExternal nul)        [] | nul == sUN "prim__null" = tell [ ldnull ]
+
+cgOp (LExternal name) []
+  | name == sUN "prim__null" = tell [ ldnull ]
+
 cgOp o _ = unsupportedOp o
 
 storeTemp :: PrimitiveType -> LVar -> CilCodegen String
