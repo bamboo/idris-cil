@@ -141,8 +141,13 @@ Object = CIL CILTyObj
 ObjectArray : Type
 ObjectArray = CIL (CILTyArr CILTyObj)
 
+%inline
+RuntimeTypeTy : CILTy
+RuntimeTypeTy = corlibTy "System.Type"
+
+%inline
 RuntimeType : Type
-RuntimeType = corlib "System.Type"
+RuntimeType = CIL RuntimeTypeTy
 
 %inline
 typeOf : CILTy -> CIL_IO RuntimeType
