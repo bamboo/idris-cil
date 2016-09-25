@@ -80,9 +80,6 @@ namespace System.Text
   AppendLine : StringBuilder -> String -> CIL_IO StringBuilder
   AppendLine = invokeStringBuilder "AppendLine"
 
-namespace System.Console
-  Write : String -> CIL_IO ()
-  Write = invoke (CILStatic (corlibTy "System.Console") "Write") (String -> CIL_IO ())
 
 GuidTy : CILTy
 GuidTy = corlibTyVal "System.Guid"

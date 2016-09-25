@@ -172,6 +172,7 @@ Equals x y =
          (believe_me x) (believe_me y)
 
 namespace System.Array
+
   ArrayTy : CILTy
   ArrayTy = corlibTy "System.Array"
 
@@ -195,15 +196,43 @@ namespace System.Array
     SetValue array (believe_me v) 0
     return $ believe_me array
 
+namespace System.Console
+
+  ConsoleTy : CILTy
+  ConsoleTy = corlibTy "System.Console"
+
+  invokeConsole : String -> (ty: Type) -> {auto fty : FTy FFI_CIL [] ty} -> ty
+  invokeConsole fn ty = invoke (CILStatic ConsoleTy fn) ty
+
+  namespace Char
+
+    Read : CIL_IO Int
+    Read = invokeConsole "Read" (CIL_IO Int)
+
+    Write : Char -> CIL_IO ()
+    Write = invokeConsole "Write" (Char -> CIL_IO ())
+
+  namespace String
+
+    Write : String -> CIL_IO ()
+    Write = invokeConsole "Write" (String -> CIL_IO ())
+
 namespace System.Convert
+
   ToInt32 : IsA Object a => a -> CIL_IO Int
   ToInt32 o =
     invoke (CILStatic (corlibTy "System.Convert") "ToInt32")
            (Ptr -> CIL_IO Int)
            (believe_me o)
 
+putStr : String -> CIL_IO ()
+putStr = putStr'
+
 putStrLn : String -> CIL_IO ()
 putStrLn = putStrLn'
+
+print : Show a => a -> CIL_IO ()
+print = print'
 
 printLn : Show a => a -> CIL_IO ()
 printLn = printLn'

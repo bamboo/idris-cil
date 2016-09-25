@@ -2,3 +2,6 @@ package cil
 
 modules = CIL.FFI
         , CIL.FFI.Array
+        , CIL.FFI.Effects
+
+pkgs = effects
