@@ -60,7 +60,7 @@ namespace System.Math.Int32
   Max : Int -> Int -> CIL_IO Int
   Max = invoke SystemMathMax (Int -> Int -> CIL_IO Int)
 
-namespace System.Math.Float32
+namespace System.Math.Double
   Max : Double -> Double -> CIL_IO Double
   Max = invoke SystemMathMax (Double -> Double -> CIL_IO Double)
 

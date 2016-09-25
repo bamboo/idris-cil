@@ -101,7 +101,7 @@ data CilExport = CilFun  !MethodDef
 exportedTypes :: CodegenInfo -> [TypeDef]
 exportedTypes ci = exportDecls ci >>= exports
   where exports :: ExportIFace -> [TypeDef]
-        exports (Export (NS (UN (T.unpack -> "FFI_CIL")) _) exportedDataType es) =
+        exports (Export (sn -> "FFI_CIL") exportedDataType es) =
             let cilExports = cilExport <$> es
                 (cilFuns, cilTypes) = partition isCilFun cilExports
                 methods = (\(CilFun m) -> m) <$> cilFuns
@@ -431,6 +431,7 @@ castOrUnbox t =
 
 isValueType :: PrimitiveType -> Bool
 isValueType (ValueType _ _) = True
+isValueType Double64 = True
 isValueType Float32 = True
 isValueType Int32   = True
 isValueType Bool    = True
@@ -460,8 +461,8 @@ cgConst (BI i)  = tell [ ldc i
                        , boxInt32 ]
 cgConst (Ch c)  = tell [ ldc $ ord c
                        , boxChar ]
-cgConst (Fl d)  = tell [ ldc_r4 (double2Float d)
-                       , boxFloat32 ]
+cgConst (Fl d)  = tell [ ldc_r8 d
+                       , boxDouble64 ]
 cgConst c = unsupported "const" c
 {-
   = I Int
@@ -699,7 +700,7 @@ cgOp (LEq (ATInt _))        args = intOp ceq args
 cgOp (LSLt (ATInt ITChar))  args = primitiveOp Char Int32 clt args
 cgOp (LSLt (ATInt _))       args = intOp clt args
 cgOp (LIntStr _)            [i]  = primitiveToString i
-cgOp (LIntFloat _)          [i]  = convert Int32 Float32 "ToSingle" i
+cgOp (LIntFloat _)          [i]  = conv Int32 Double64 conv_r8 i
 cgOp (LTimes ATFloat)       args = floatOp mul args
 cgOp (LSDiv ATFloat)        args = floatOp Cil.div args
 cgOp (LPlus ATFloat)        args = floatOp add args
@@ -709,7 +710,50 @@ cgOp LFloatStr              [f]  = primitiveToString f
 cgOp (LExternal name) []
   | name == sUN "prim__null" = tell [ ldnull ]
 
+cgOp (LExternal (sn -> "prim__singleFromDouble")) [x] = conv Double64 Float32 conv_r4 x
+cgOp (LExternal (sn -> "prim__singleFromInteger")) [x] = conv Int32 Float32 conv_r4 x
+cgOp (LExternal (sn -> "prim__singleAdd")) args = singleOp add args
+cgOp (LExternal (sn -> "prim__singleSub")) args = singleOp sub args
+cgOp (LExternal (sn -> "prim__singleMul")) args = singleOp mul args
+cgOp (LExternal (sn -> "prim__singleDiv")) args = singleOp Cil.div args
+
+cgOp (LExternal (sn -> "prim__singleCompare")) [x, y] = do
+  x' <- storeTemp Float32 x
+  tell [ ldlocaN x' ]
+  loadAs Float32 y
+  tell [ call [CcInstance] Int32 "" "float32" "CompareTo" [Float32]
+       , boxInt32 ]
+
+cgOp (LExternal (sn -> "prim__singleMax")) [x, y] = singleMathOp "Max" x y
+cgOp (LExternal (sn -> "prim__singleMin")) [x, y] = singleMathOp "Min" x y
+cgOp (LExternal (sn -> "prim__singleNeg")) [x] = do
+  loadAs Float32 x
+  tell [ neg
+       , boxFloat32 ]
+
+cgOp (LExternal (sn -> "prim__singleAbs")) [x] = do
+  loadAs Float32 x
+  tell [ call [] Float32 "mscorlib" "System.Math" "Abs" [Float32]
+       , boxFloat32 ]
+
+cgOp (LExternal (sn -> "prim__singleShow")) [x] = primitiveToString x
+
 cgOp o _ = unsupportedOp o
+
+singleMathOp :: String -> LVar -> LVar -> CilCodegen ()
+singleMathOp op x y = do
+  loadAs Float32 x
+  loadAs Float32 y
+  tell [ call [] Float32 "mscorlib" "System.Math" op [Float32, Float32]
+       , boxFloat32 ]
+
+singleOp = primitiveOp Float32 Float32
+
+conv :: PrimitiveType -> PrimitiveType -> MethodDecl -> LVar -> CilCodegen ()
+conv from to inst var = do
+  loadAs from var
+  tell [ inst
+       , box to ]
 
 storeTemp :: PrimitiveType -> LVar -> CilCodegen String
 storeTemp localType localVar = do
@@ -750,7 +794,7 @@ intOp :: MethodDecl -> [LVar] -> CilCodegen ()
 intOp = numOp Int32
 
 floatOp :: MethodDecl -> [LVar] -> CilCodegen ()
-floatOp = numOp Float32
+floatOp = numOp Double64
 
 numOp :: PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen ()
 numOp t = primitiveOp t t
@@ -767,9 +811,10 @@ convert from to fn arg = do
   tell [ call [] to "mscorlib" "System.Convert" fn [from]
        , box to ]
 
-boxInt32, boxFloat32, boxChar, boxBoolean :: MethodDecl
+boxInt32, boxFloat32, boxDouble64, boxChar, boxBoolean :: MethodDecl
 boxInt32   = box Int32
 boxFloat32 = box Float32
+boxDouble64 = box Double64
 boxChar    = box Char
 boxBoolean = box Bool
 
@@ -795,6 +840,10 @@ localIndex :: Offset -> CilCodegen Offset
 localIndex i = do
   (CodegenInput _ paramCount) <- ask
   return $ i - paramCount
+
+sn :: Name -> String
+sn (NS (UN n) _) = T.unpack n
+sn _             = ""
 
 entryPointName :: Name
 entryPointName = MN 0 "runMain"

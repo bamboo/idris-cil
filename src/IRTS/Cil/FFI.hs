@@ -88,9 +88,11 @@ foreignType (FApp cilTy [FStr assembly, FStr typeName])
 foreignType (FApp cilTy [FStr assembly, FStr typeName])
   | cilTy == sUN "CILTyVal" =
     case (assembly, typeName) of
-      ("", "bool") -> Bool
-      ("", "int")  -> Int32
-      _            -> ValueType assembly typeName
+      ("", "float32") -> Float32
+      ("", "float64") -> Double64
+      ("", "bool")    -> Bool
+      ("", "int")     -> Int32
+      _               -> ValueType assembly typeName
 
 foreignType (FApp cilTy [_, FCon (UN cilIntTy)])
   | cilTy == sUN "CIL_IntT" =
@@ -142,7 +144,7 @@ unsupportedForeignType = error . ("Unsupported foreign type: " <>)
 foreignTypes :: HM.HashMap Text PrimitiveType
 foreignTypes = HM.fromList [ ("CIL_Str",   String)
                            , ("CIL_Ptr",   Object)
-                           , ("CIL_Float", Float32)
+                           , ("CIL_Float", Double64)
                            , ("CIL_Bool",  Bool)
                            , ("CIL_Unit",  Void)
                            ]
