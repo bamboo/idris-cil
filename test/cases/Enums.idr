@@ -53,7 +53,7 @@ namespace System.IO.TFileAccess
   fromEnum : FileAccess -> CIL_IO TFileAccess
   fromEnum e = do
     i32 <- ToInt32 e
-    return $
+    pure $
       case i32 of
         1 => Read
         2 => Write

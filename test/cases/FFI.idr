@@ -145,7 +145,7 @@ ExportedPerson = CIL $ CILTyVal "" "Person"
 unForeign : ExportedPerson -> CIL_IO Person
 unForeign ep = do
  ptr <- invoke (CILInstanceField "ptr") (ExportedPerson -> CIL_IO Ptr) ep
- return $ believe_me ptr
+ pure $ believe_me ptr
 
 ||| Invokes the exported function `createPerson` via the FFI.
 invokeCreatePerson : String -> String -> CIL_IO ExportedPerson
@@ -221,7 +221,7 @@ exportedBoolToString = show
 exportedBoolToStringIO : Bool -> CIL_IO String
 exportedBoolToStringIO b = do
   putStrLn $ "exportedBoolToStringIO " ++ show b
-  return $ show b
+  pure $ show b
 
 exportedIncInt : Int -> Int
 exportedIncInt i = i + 1

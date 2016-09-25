@@ -194,7 +194,7 @@ namespace System.Array
   fromList [v] = do
     array <- CreateInstance !(typeOf CILTyObj) 1
     SetValue array (believe_me v) 0
-    return $ believe_me array
+    pure $ believe_me array
 
 namespace System.Console
 
