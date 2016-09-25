@@ -16,6 +16,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import           GHC.Float
 import           IRTS.Cil.FFI
+import           IRTS.Cil.MaxStack
 import           IRTS.CodegenCommon
 import           IRTS.Lang
 import           IRTS.Simplified
@@ -80,7 +81,7 @@ method decl@(SFun name ps _ sexp) = do
                        , cilForSexp
                        , [ret] ]
   put delegates'
-  return $ Method attrs retType (cilName name) parameters (toList body)
+  return $ Method attrs retType (cilName name) parameters (withMaxStack (toList body))
   where attrs      = [MaStatic, MaAssembly]
         retType    = if isEntryPoint then Cil.Void else Cil.Object
         parameters = param <$> ps
@@ -88,6 +89,7 @@ method decl@(SFun name ps _ sexp) = do
         locals lc  = fromList [localsInit $ local <$> [0..(lc - 1)] | lc > 0]
         local i    = Local Cil.Object ("l" <> show i)
         isEntryPoint = name == entryPointName
+        withMaxStack body = maxStack (maxStackFor body) : body
         removeLastTailCall :: [MethodDecl] -> [MethodDecl]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs

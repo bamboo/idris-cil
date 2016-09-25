@@ -59,7 +59,7 @@ exec input = do
 
 compileToBytecode :: [FilePath] -> IO ()
 compileToBytecode files = traceProcess "idris" (options <> files)
-  where options = ["--typeintype", "--check", "--quiet", "-p", "cil", "-p", "contrib"]
+  where options = ["--typeintype", "--check", "--quiet", "-p", "cil", "-p", "contrib", "-p", "effects"]
 
 evalIdris :: Monad m => IState -> StateT IState (ExceptT e m) a -> m (Either e a)
 evalIdris istate prog = runExceptT $ evalStateT prog istate

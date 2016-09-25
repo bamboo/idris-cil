@@ -23,6 +23,7 @@ library
   exposed-modules:  IRTS.CodegenCil
                   , IRTS.Cil.UnreachableCodeRemoval
                   , IRTS.Cil.FFI
+                  , IRTS.Cil.MaxStack
   build-depends:    base >= 4.7 && <5
                   , containers
                   , unordered-containers
