@@ -6,7 +6,7 @@ import IRTS.CodegenCommon
 import IRTS.Compiler
 import Idris.AbsSyntax
 import Idris.ElabDecls
-import Idris.REPL
+import Idris.Main
 
 import System.Environment
 import System.Exit

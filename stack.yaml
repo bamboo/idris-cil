@@ -5,5 +5,10 @@ packages:
       git: https://github.com/bamboo/language-cil.git
       commit: b2cd0ed341188d3640e077669a2f154123d763e8
     extra-dep: true
+flags:
+  idris:
+    ffi: true
 extra-deps:
   - bool-extras-0.4.0
+  - idris-0.12.3
+  - libffi-0.1
