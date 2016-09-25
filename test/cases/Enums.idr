@@ -29,7 +29,7 @@ namespace System.IO.FileAccess
   FileAccess : Type
   FileAccess = CIL FileAccessTy
 
-  instance IsA Object FileAccess where {}
+  IsA Object FileAccess where {}
 
   Read : CIL_IO FileAccess
   Read = invoke (CILEnumValueOf FileAccessTy "1")
