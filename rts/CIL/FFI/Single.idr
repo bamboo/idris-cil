@@ -14,6 +14,7 @@ Single = CIL SingleTy
 %extern prim__singleSub : Single -> Single -> Single
 %extern prim__singleMul : Single -> Single -> Single
 %extern prim__singleFromInteger : Integer -> Single
+%extern prim__singleFromInt : Int -> Single
 %extern prim__singleFromDouble : Double -> Single
 %extern prim__singleNeg : Single -> Single
 %extern prim__singleAbs : Single -> Single
@@ -55,6 +56,12 @@ implementation Show Single where
 
 implementation Cast Double Single where
   cast = prim__singleFromDouble
+
+implementation Cast Integer Single where
+  cast = prim__singleFromInteger
+
+implementation Cast Int Single where
+  cast = prim__singleFromInt
 
 single : Double -> Single
 single = cast

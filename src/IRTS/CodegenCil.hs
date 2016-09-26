@@ -712,6 +712,7 @@ cgOp (LExternal name) []
 
 cgOp (LExternal (sn -> "prim__singleFromDouble")) [x] = conv Double64 Float32 conv_r4 x
 cgOp (LExternal (sn -> "prim__singleFromInteger")) [x] = conv Int32 Float32 conv_r4 x
+cgOp (LExternal (sn -> "prim__singleFromInt")) [x] = conv Int32 Float32 conv_r4 x
 cgOp (LExternal (sn -> "prim__singleAdd")) args = singleOp add args
 cgOp (LExternal (sn -> "prim__singleSub")) args = singleOp sub args
 cgOp (LExternal (sn -> "prim__singleMul")) args = singleOp mul args
