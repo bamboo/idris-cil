@@ -654,6 +654,13 @@ cgOp LStrEq args = do
   tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (const String <$> args)
        , boxInt32 ] -- strange but correct
 
+cgOp LStrLt args = do
+  forM_ args loadString
+  tell [ call [CcInstance] Int32 "mscorlib" "System.String" "CompareTo" [String]
+       , ldc_i4 0
+       , clt
+       , boxInt32 ]
+
 cgOp LStrHead [v] = do
   loadString v
   tell [ ldc_i4 0
