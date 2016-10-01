@@ -6,6 +6,7 @@ module IRTS.CodegenCil (codegenCil) where
 
 import           Control.Monad.RWS.Strict hiding (local)
 import           Control.Monad.State.Strict
+
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
@@ -14,7 +15,7 @@ import           Data.Function (on)
 import           Data.List (partition, sortBy)
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
-import           GHC.Float
+
 import           IRTS.Cil.FFI
 import           IRTS.Cil.MaxStack
 import           IRTS.CodegenCommon
@@ -22,10 +23,18 @@ import           IRTS.Lang
 import           IRTS.Simplified
 import           Idris.Core.CaseTree (CaseType(Shared))
 import           Idris.Core.TT
+
 import           Language.Cil
 import qualified Language.Cil as Cil
+
 import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
 import           System.Process (readProcess)
+
+import           GHC.Float
+
+
+-- |A CIL instruction.
+type Instruction = MethodDecl
 
 codegenCil :: CodeGenerator
 codegenCil ci = do writeFileUTF8 cilFile cilText
@@ -90,7 +99,7 @@ method decl@(SFun name ps _ sexp) = do
         local i    = Local Cil.Object ("l" <> show i)
         isEntryPoint = name == entryPointName
         withMaxStack body = maxStack (maxStackFor body) : body
-        removeLastTailCall :: [MethodDecl] -> [MethodDecl]
+        removeLastTailCall :: [Instruction] -> [Instruction]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
         removeLastTailCall _ = error "Entry point should end in tail call"
@@ -142,7 +151,7 @@ data CodegenState = CodegenState { nextSuffix :: !Int
                                  , localCount :: !Int
                                  , delegates  :: !DelegateOutput }
 
-type CodegenOutput = DList MethodDecl
+type CodegenOutput = DList Instruction
 
 type CilCodegen a = RWS CodegenInput CodegenOutput CodegenState a
 
@@ -164,7 +173,7 @@ cil (SUpdate _ v) = cil v
 cil (SV v)        = load v
 cil (SConst c)    = cgConst c
 cil (SOp op args) = cgOp op args
-cil SNothing      = throwException "SNothing"
+cil SNothing      = cgThrowException "SNothing"
 
 -- Special constructors: True, False
 cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
@@ -210,8 +219,7 @@ cil (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
   load v
   tell [ localsInit [Local Char val]
        , unbox_any Char
-       , stlocN val
-       ]
+       , stlocN val ]
   labels <- uniqueLabelsFor alts
   endLabel <- gensym "END"
   mapM_ (cgAlt endLabel val) (zip labels alts)
@@ -222,12 +230,10 @@ cil (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
       tell [ ldc $ ord t
            , ldlocN val
            , ceq
-           , brfalse l
-           ]
+           , brfalse l ]
       cil e
       tell [ br end
-           , label l
-           ]
+           , label l ]
     cgAlt end _ (l, SDefaultCase e) = do
       cil e
       tell [ br end ]
@@ -399,7 +405,7 @@ cilTypeOf :: PrimitiveType -> CilCodegen ()
 cilTypeOf t = tell [ ldtoken t
                    , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
 
-delegateFunction :: [MethAttr] -> PrimitiveType -> MethodName -> [PrimitiveType] -> Bool -> [MethodDecl] -> MethodDef
+delegateFunction :: [MethAttr] -> PrimitiveType -> MethodName -> [PrimitiveType] -> Bool -> [Instruction] -> MethodDef
 delegateFunction attrs retType fn paramTypes io invocation = Method attrs retType fn parameters body
   where parameters = zipWith param [(0 :: Int)..] paramTypes
         param i t  = Param Nothing t ("p" <> show i)
@@ -416,7 +422,7 @@ delegateFunction attrs retType fn paramTypes io invocation = Method attrs retTyp
 
 
 -- Exported data types are encoded as structs with a single `ptr` field
-loadArg :: (Int, PrimitiveType) -> [MethodDecl]
+loadArg :: (Int, PrimitiveType) -> [Instruction]
 loadArg (i, ValueType "" exportedDataType) = [ ldarga i
                                              , ldfld Cil.Object "" exportedDataType "ptr" ]
 loadArg (i, t) = ldarg i : [box t | isValueType t]
@@ -507,7 +513,7 @@ fillInTheGaps :: (a -> Int) -> (Int -> a) -> [a] -> [a]
 fillInTheGaps extract create = go empty
   where go acc (i:j:rest) = let gap = [(extract i + 1)..(extract j - 1)]
                             in go (acc <> singleton i <> fromList (create <$> gap)) (j:rest)
-        go acc rest     = toList acc <> rest
+        go acc rest       = toList acc <> rest
 
 uniqueLabelsFor :: [a] -> CilCodegen [String]
 uniqueLabelsFor alts = do
@@ -652,7 +658,7 @@ cgOp LStrSubstr [index, count, s] = do
 cgOp LStrEq args = do
   forM_ args loadString
   tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (const String <$> args)
-       , boxInt32 ] -- strange but correct
+       , boxInt32 ]
 
 cgOp LStrLt args = do
   forM_ args loadString
@@ -689,32 +695,33 @@ cgOp (LChInt ITNative) [c] = do
 
 cgOp (LSExt ITNative ITBig) [i]  = load i
 cgOp (LZExt ITNative ITBig) [i]  = load i
-cgOp (LPlus (ATInt _))      args = intOp add args
-cgOp (LMinus (ATInt _))     args = intOp sub args
-cgOp (LTimes (ATInt _))     args = intOp mul args
-cgOp (LEq (ATInt ITChar))   args = primitiveOp Char Int32 ceq args
-cgOp (LEq (ATInt _))        args = intOp ceq args
-cgOp (LSLt (ATInt ITChar))  args = primitiveOp Char Int32 clt args
-cgOp (LSLt (ATInt _))       args = intOp clt args
-cgOp (LIntStr _)            [i]  = primitiveToString i
-cgOp (LIntFloat _)          [i]  = conv Int32 Double64 conv_r8 i
-cgOp (LTimes ATFloat)       args = floatOp mul args
-cgOp (LSDiv ATFloat)        args = floatOp Cil.div args
-cgOp (LPlus ATFloat)        args = floatOp add args
-cgOp (LMinus ATFloat)       args = floatOp sub args
-cgOp LFloatStr              [f]  = primitiveToString f
+cgOp (LPlus (ATInt _))      args = cgInt32Op add args
+cgOp (LMinus (ATInt _))     args = cgInt32Op sub args
+cgOp (LTimes (ATInt _))     args = cgInt32Op mul args
+cgOp (LEq (ATInt ITChar))   args = cgPrimitiveOp Char Int32 ceq args
+cgOp (LEq (ATInt _))        args = cgInt32Op ceq args
+cgOp (LSLt (ATInt ITChar))  args = cgPrimitiveOp Char Int32 clt args
+cgOp (LSLt (ATInt _))       args = cgInt32Op clt args
+cgOp (LIntStr _)            [i]  = cgPrimitiveToString i
+cgOp (LIntFloat _)          [i]  = cgPrimitiveCast Int32 Double64 conv_r8 i
+cgOp (LTimes ATFloat)       args = cgFloatOp mul args
+cgOp (LSDiv ATFloat)        args = cgFloatOp Cil.div args
+cgOp (LPlus ATFloat)        args = cgFloatOp add args
+cgOp (LMinus ATFloat)       args = cgFloatOp sub args
+cgOp LFloatStr              [f]  = cgPrimitiveToString f
 cgOp LStrFloat              [s]  = cgTryParse Double64 s
 
 cgOp (LExternal name) []
   | name == sUN "prim__null" = tell [ ldnull ]
 
-cgOp (LExternal (sn -> "prim__singleFromDouble")) [x] = conv Double64 Float32 conv_r4 x
-cgOp (LExternal (sn -> "prim__singleFromInteger")) [x] = conv Int32 Float32 conv_r4 x
-cgOp (LExternal (sn -> "prim__singleFromInt")) [x] = conv Int32 Float32 conv_r4 x
-cgOp (LExternal (sn -> "prim__singleAdd")) args = singleOp add args
-cgOp (LExternal (sn -> "prim__singleSub")) args = singleOp sub args
-cgOp (LExternal (sn -> "prim__singleMul")) args = singleOp mul args
-cgOp (LExternal (sn -> "prim__singleDiv")) args = singleOp Cil.div args
+cgOp (LExternal (sn -> "prim__singleFromDouble")) [x]  = cgPrimitiveCast Double64 Float32 conv_r4 x
+cgOp (LExternal (sn -> "prim__singleFromInteger")) [x] = cgPrimitiveCast Int32 Float32 conv_r4 x
+cgOp (LExternal (sn -> "prim__singleFromInt")) [x]     = cgPrimitiveCast Int32 Float32 conv_r4 x
+
+cgOp (LExternal (sn -> "prim__singleAdd")) args = cgSingleOp add args
+cgOp (LExternal (sn -> "prim__singleSub")) args = cgSingleOp sub args
+cgOp (LExternal (sn -> "prim__singleMul")) args = cgSingleOp mul args
+cgOp (LExternal (sn -> "prim__singleDiv")) args = cgSingleOp Cil.div args
 
 cgOp (LExternal (sn -> "prim__singleCompare")) [x, y] = do
   x' <- storeTemp Float32 x
@@ -723,8 +730,8 @@ cgOp (LExternal (sn -> "prim__singleCompare")) [x, y] = do
   tell [ call [CcInstance] Int32 "" "float32" "CompareTo" [Float32]
        , boxInt32 ]
 
-cgOp (LExternal (sn -> "prim__singleMax")) [x, y] = singleMathOp "Max" x y
-cgOp (LExternal (sn -> "prim__singleMin")) [x, y] = singleMathOp "Min" x y
+cgOp (LExternal (sn -> "prim__singleMax")) [x, y] = cgSingleMathOp "Max" x y
+cgOp (LExternal (sn -> "prim__singleMin")) [x, y] = cgSingleMathOp "Min" x y
 cgOp (LExternal (sn -> "prim__singleNeg")) [x] = do
   loadAs Float32 x
   tell [ neg
@@ -735,7 +742,7 @@ cgOp (LExternal (sn -> "prim__singleAbs")) [x] = do
   tell [ call [] Float32 "mscorlib" "System.Math" "Abs" [Float32]
        , boxFloat32 ]
 
-cgOp (LExternal (sn -> "prim__singleShow")) [x] = primitiveToString x
+cgOp (LExternal (sn -> "prim__singleShow")) [x] = cgPrimitiveToString x
 
 cgOp o _ = unsupportedOp o
 
@@ -751,17 +758,17 @@ cgTryParse ty var = do
        , ldlocN val
        , box ty ]
 
-singleMathOp :: String -> LVar -> LVar -> CilCodegen ()
-singleMathOp op x y = do
+cgSingleMathOp :: String -> LVar -> LVar -> CilCodegen ()
+cgSingleMathOp op x y = do
   loadAs Float32 x
   loadAs Float32 y
   tell [ call [] Float32 "mscorlib" "System.Math" op [Float32, Float32]
        , boxFloat32 ]
 
-singleOp = primitiveOp Float32 Float32
+cgSingleOp = cgPrimitiveOp Float32 Float32
 
-conv :: PrimitiveType -> PrimitiveType -> MethodDecl -> LVar -> CilCodegen ()
-conv from to inst var = do
+cgPrimitiveCast :: PrimitiveType -> PrimitiveType -> Instruction -> LVar -> CilCodegen ()
+cgPrimitiveCast from to inst var = do
   loadAs from var
   tell [ inst
        , box to ]
@@ -777,19 +784,19 @@ storeTemp localType localVar = do
 unsupportedOp :: PrimFn -> CilCodegen ()
 unsupportedOp = unsupported "operation"
 
-primitiveToString :: LVar -> CilCodegen ()
-primitiveToString p = load p >> tell [ objectToString ]
+cgPrimitiveToString :: LVar -> CilCodegen ()
+cgPrimitiveToString p = load p >> tell [ objectToString ]
 
-objectToString :: MethodDecl
+objectToString :: Instruction
 objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
 
 unsupported :: Show a => String -> a -> CilCodegen ()
 unsupported desc v = do
   (CodegenInput decl _) <- ask
-  throwException $ "Unsupported " <> desc <> " `" <> show v <> "' in\n" <> show decl
+  cgThrowException $ "Unsupported " <> desc <> " `" <> show v <> "' in\n" <> show decl
 
-throwException :: String -> CilCodegen ()
-throwException message =
+cgThrowException :: String -> CilCodegen ()
+cgThrowException message =
   tell [ ldstr message
        , newobj "mscorlib" "System.Exception" [String]
        , throw
@@ -801,33 +808,27 @@ gensym prefix = do
   put $ st { nextSuffix = suffix + 1 }
   return $ prefix <> show suffix
 
-intOp :: MethodDecl -> [LVar] -> CilCodegen ()
-intOp = numOp Int32
+cgInt32Op :: Instruction -> [LVar] -> CilCodegen ()
+cgInt32Op = cgNumOp Int32
 
-floatOp :: MethodDecl -> [LVar] -> CilCodegen ()
-floatOp = numOp Double64
+cgFloatOp :: Instruction -> [LVar] -> CilCodegen ()
+cgFloatOp = cgNumOp Double64
 
-numOp :: PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen ()
-numOp t = primitiveOp t t
+cgNumOp :: PrimitiveType -> Instruction -> [LVar] -> CilCodegen ()
+cgNumOp t = cgPrimitiveOp t t
 
-primitiveOp :: PrimitiveType -> PrimitiveType -> MethodDecl -> [LVar] -> CilCodegen ()
-primitiveOp argT resT op args = do
+cgPrimitiveOp :: PrimitiveType -> PrimitiveType -> Instruction -> [LVar] -> CilCodegen ()
+cgPrimitiveOp argT resT op args = do
   forM_ args (loadAs argT)
   tell [ op
        , box resT ]
 
-convert :: PrimitiveType -> PrimitiveType -> String -> LVar -> CilCodegen ()
-convert from to fn arg = do
-  loadAs from arg
-  tell [ call [] to "mscorlib" "System.Convert" fn [from]
-       , box to ]
-
-boxInt32, boxFloat32, boxDouble64, boxChar, boxBoolean :: MethodDecl
-boxInt32   = box Int32
-boxFloat32 = box Float32
+boxDouble64, boxFloat32, boxInt32, boxChar, boxBoolean :: Instruction
 boxDouble64 = box Double64
-boxChar    = box Char
-boxBoolean = box Bool
+boxFloat32  = box Float32
+boxInt32    = box Int32
+boxChar     = box Char
+boxBoolean  = box Bool
 
 loadAs :: PrimitiveType -> LVar -> CilCodegen ()
 loadAs valueType l = load l >> tell [ unbox_any valueType ]
@@ -835,7 +836,7 @@ loadAs valueType l = load l >> tell [ unbox_any valueType ]
 loadString :: LVar -> CilCodegen ()
 loadString l = load l >> tell [ castclass String ]
 
-ldc :: (Integral n) => n -> MethodDecl
+ldc :: (Integral n) => n -> Instruction
 ldc = ldc_i4 . fromIntegral
 
 load :: LVar -> CilCodegen ()
@@ -852,13 +853,13 @@ localIndex i = do
   (CodegenInput _ paramCount) <- ask
   return $ i - paramCount
 
+-- |Unpacks a simple name from a namespaced name.
 sn :: Name -> String
 sn (NS (UN n) _) = T.unpack n
 sn _             = ""
 
 entryPointName :: Name
 entryPointName = MN 0 "runMain"
---entryPointName = NS (UN "main") ["Main"]
 
 cilName :: Name -> String
 cilName = quoted . T.unpack . showName
@@ -870,7 +871,7 @@ showName (MN i t)  = T.concat [t, T.pack $ show i]
 showName (SN sn)   = T.pack $ show sn
 showName e = error $ "Unsupported name `" <> show e <> "'"
 
-loadNothing :: MethodDecl
+loadNothing :: Instruction
 loadNothing = ldsfld Cil.Object "" "Nothing" "Default"
 
 nothingType :: TypeDef
