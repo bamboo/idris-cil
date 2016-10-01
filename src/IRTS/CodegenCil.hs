@@ -678,17 +678,7 @@ cgOp LStrIndex [s, i] = do
   tell [ callvirt Char "mscorlib" "System.String" "get_Chars" [Int32]
        , boxChar ]
 
-cgOp (LStrInt ITNative) [v] = do
-  val <- gensym "val"
-  tell [ localsInit [ Local Int32 val ]
-       , ldc_i4 0
-       , stlocN val ]
-  loadString v
-  tell [ ldlocaN val
-       , call [] Bool "mscorlib" "System.Int32" "TryParse" [String, ByRef Int32]
-       , pop
-       , ldlocN val
-       , boxInt32 ]
+cgOp (LStrInt ITNative) [s] = cgTryParse Int32 s
 
 cgOp (LStrInt i) [_] = unsupported "LStrInt" i
 
@@ -713,6 +703,7 @@ cgOp (LSDiv ATFloat)        args = floatOp Cil.div args
 cgOp (LPlus ATFloat)        args = floatOp add args
 cgOp (LMinus ATFloat)       args = floatOp sub args
 cgOp LFloatStr              [f]  = primitiveToString f
+cgOp LStrFloat              [s]  = cgTryParse Double64 s
 
 cgOp (LExternal name) []
   | name == sUN "prim__null" = tell [ ldnull ]
@@ -747,6 +738,18 @@ cgOp (LExternal (sn -> "prim__singleAbs")) [x] = do
 cgOp (LExternal (sn -> "prim__singleShow")) [x] = primitiveToString x
 
 cgOp o _ = unsupportedOp o
+
+cgTryParse :: PrimitiveType -> LVar -> CilCodegen ()
+cgTryParse ty var = do
+  let (asmName, tyName) = assemblyNameAndTypeFrom ty
+  loadString var
+  val <- gensym "val"
+  tell [ localsInit [ Local ty val ] ]
+  tell [ ldlocaN val
+       , call [] Bool asmName tyName "TryParse" [String, ByRef ty]
+       , pop
+       , ldlocN val
+       , box ty ]
 
 singleMathOp :: String -> LVar -> LVar -> CilCodegen ()
 singleMathOp op x y = do

@@ -129,6 +129,8 @@ assemblyNameAndTypeFrom (ValueType     assemblyName typeName) = (assemblyName, t
 assemblyNameAndTypeFrom gti@GenericReferenceTypeInstance{}    = ("", pr gti "")
 assemblyNameAndTypeFrom String = ("", "string")
 assemblyNameAndTypeFrom Object = ("", "object")
+assemblyNameAndTypeFrom Int32  = ("", "int32")
+assemblyNameAndTypeFrom Double64 = ("", "float64")
 assemblyNameAndTypeFrom t = error $ "unsupported assembly name for: " <> show t
 
 foreignTypeByName :: Name -> PrimitiveType
