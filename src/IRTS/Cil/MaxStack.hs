@@ -2,7 +2,7 @@ module IRTS.Cil.MaxStack where
 
 import Language.Cil.Syntax
 
-maxStackFor :: [MethodDecl] -> [Int]
+maxStackFor :: [MethodDecl] -> Int
 maxStackFor l = maximum $ iterStack $ ocList l
   where
     scan :: (s -> e -> s) -> s -> [e] -> [s]
