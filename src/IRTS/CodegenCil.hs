@@ -98,7 +98,7 @@ method decl@(SFun name ps _ sexp) = do
         locals lc  = fromList [localsInit $ local <$> [0..(lc - 1)] | lc > 0]
         local i    = Local Cil.Object ("l" <> show i)
         isEntryPoint = name == entryPointName
-        withMaxStack body = maxStack (maxStackFor body) : body
+        withMaxStack body = maxStack (maxStackFor body retType) : body
         removeLastTailCall :: [Instruction] -> [Instruction]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs

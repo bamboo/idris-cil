@@ -2,21 +2,23 @@ module IRTS.Cil.MaxStack where
 
 import Language.Cil.Syntax
 
-maxStackFor :: [MethodDecl] -> Int
-maxStackFor l = maximum $ iterStack $ ocList l
+{- Doesn't honor forward jumps, thus the computed value may exceed the actual stack requirement -}
+maxStackFor :: [MethodDecl] -> PrimitiveType -> Int
+maxStackFor decls returnType = maximumRunningSum (netStackChange retStackChange <$> ocList decls)
   where
-    scan :: (s -> e -> s) -> s -> [e] -> [s]
-    scan f s [    ] = [s]
-    scan f s (x:xs) =
-        let s' = f s x
-        in s' : scan f s' xs
-    iterStack = scan (\ s e -> s + netStackChange s e) 0
-    ocList l =
-        l >>= (\ m ->
-                case m of
-                    OpCode o -> [o]
-                    _        -> [ ]
-              )
+    retStackChange = if returnType /= Void then -1 else 0
+    ocList decls = do
+      decl <- decls
+      case decl of
+        OpCode o -> [o]
+        _        -> [ ]
+
+maximumRunningSum :: [Int] -> Int
+maximumRunningSum = fst . foldl accumulate (0, 0)
+  where
+    accumulate (rm, rs) e =
+      let rs' = rs + e
+      in (max rm rs', rs')
 
 netStackChange :: Int -> OpCode -> Int
 netStackChange _  Add          = -1
@@ -164,7 +166,7 @@ netStackChange _  Pop          = -1
 -- NOTE: refanytype?
 netStackChange _  Rem          = -1
 netStackChange _  Rem_un       = -1
-netStackChange s  Ret          = if s == 0 then 0 else -1 -- void -> stack should be empty
+netStackChange retStackChg Ret = retStackChg
 -- rethrow?
 netStackChange _  Shl          = -1
 netStackChange _  Shr          = -1
