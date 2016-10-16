@@ -13,6 +13,7 @@ total
 interp : CILTy -> Type
 interp (CILTyVal "" "int") = Int
 interp (CILTyVal "" "char") = Char
+interp (CILTyVal "" "bool") = Bool
 interp (CILTyRef "" "string") = String
 interp ty = CIL ty
 
