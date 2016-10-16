@@ -12,6 +12,7 @@ IsA Array (TypedArray cilTy elTy) where {}
 total
 interp : CILTy -> Type
 interp (CILTyVal "" "int") = Int
+interp (CILTyVal "" "char") = Char
 interp ty = CIL ty
 
 %inline
@@ -21,6 +22,10 @@ TypedArrayOf elTy = TypedArray (CILTyArr elTy) (interp elTy)
 %inline
 Int32Array : Type
 Int32Array = TypedArrayOf CILTyInt32
+
+%inline
+CharArray : Type
+CharArray = TypedArrayOf CILTyChar
 
 %inline
 length : TypedArray cilTy elT

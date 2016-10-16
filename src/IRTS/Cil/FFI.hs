@@ -92,6 +92,7 @@ foreignType (FApp cilTy [FStr assembly, FStr typeName])
       ("", "float64") -> Double64
       ("", "bool")    -> Bool
       ("", "int")     -> Int32
+      ("", "char")    -> Char
       _               -> ValueType assembly typeName
 
 foreignType (FApp cilTy [_, FCon (UN cilIntTy)])

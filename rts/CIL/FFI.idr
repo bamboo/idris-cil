@@ -40,6 +40,10 @@ CILTyBool = CILTyVal "" "bool"
 CILTyInt32 : CILTy
 CILTyInt32 = CILTyVal "" "int"
 
+%inline
+CILTyChar : CILTy
+CILTyChar = CILTyVal "" "char"
+
 ||| A foreign CIL type.
 data CIL   : CILTy -> Type where
      MkCIL : (ty : CILTy) -> CIL ty
