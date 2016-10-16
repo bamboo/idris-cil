@@ -21,6 +21,7 @@ module Main
 
 import CIL.FFI
 
+-- TODO: Move to rts
 AssemblyTy : CILTy
 AssemblyTy = corlibTy "System.Reflection.Assembly"
 
