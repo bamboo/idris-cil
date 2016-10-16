@@ -330,6 +330,9 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
         ldelemFor Int32 = [ ldelem_i4 ]
         ldelemFor ty@ValueType{} = [ ldelema ty
                                    , ldobj ty ]
+
+        ldelemFor String = [ ldelem_ref ]
+        ldelemFor ty@ReferenceType{} = [ ldelem_ref ]
         ldelemFor ty    = error $ "No ldelem for " ++ show ty
 
         stelemFor Int32 = stelem_i4

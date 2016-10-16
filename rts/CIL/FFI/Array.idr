@@ -13,6 +13,7 @@ total
 interp : CILTy -> Type
 interp (CILTyVal "" "int") = Int
 interp (CILTyVal "" "char") = Char
+interp (CILTyRef "" "string") = String
 interp ty = CIL ty
 
 %inline
@@ -22,6 +23,10 @@ TypedArrayOf elTy = TypedArray (CILTyArr elTy) (interp elTy)
 %inline
 Int32Array : Type
 Int32Array = TypedArrayOf CILTyInt32
+
+%inline
+StringArray : Type
+StringArray = TypedArrayOf CILTyStr
 
 %inline
 CharArray : Type
@@ -69,3 +74,14 @@ arrayOf {n} elTy v = do
   for_ (zip [0..the Int (cast n)] (toList v)) $ \pair =>
       set array (fst pair) (snd pair)
   pure array
+
+%inline
+forEach_ : (elTy : CILTy)
+        -> TypedArrayOf elTy
+        -> (interp elTy -> CIL_IO ())
+        -> {auto fty : FTy FFI_CIL [] (TypedArrayOf elTy -> Int -> CIL_IO (interp elTy))}
+        -> CIL_IO ()
+forEach_ elTy array f =
+  for_ [0..!(length array) - 1] $ \i => do
+    e <- get' elTy array i
+    f e
