@@ -23,15 +23,16 @@ Key = invoke (CILInstance "get_Key") (DictionaryEntry -> CIL_IO Object)
 Value : DictionaryEntry -> CIL_IO Object
 Value = invoke (CILInstance "get_Value") (DictionaryEntry -> CIL_IO Object)
 
-getEntry : TypedArrayOf DictionaryEntryTy -> Int -> CIL_IO DictionaryEntry
-getEntry a i = get' DictionaryEntryTy a i
-
 main : CIL_IO ()
 main = do
   a <- arrayOf DictionaryEntryTy [ !(newDictionaryEntry "foo" "bar")
                                  , !(newDictionaryEntry "baz" "qux") ]
-  for_ [0..!(length a) - 1] $ \i => do
-    e <- getEntry a i
+  for_ [0..1] $ \i => do
+    e <- get a i
     k <- Key e >>= ToString
     v <- Value e >>= ToString
     putStrLn ("a[" ++ show i ++ "] = {" ++ k ++ ": " ++ v ++ "}")
+
+-- Local Variables:
+-- idris-load-packages: ("cil")
+-- End:

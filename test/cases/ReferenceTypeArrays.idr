@@ -20,5 +20,9 @@ Split =
 main : CIL_IO ()
 main = do
   ss <- Split "foo,bar baz" !(ToCharArray ", ")
-  forEach_ CILTyStr ss $
+  forEach_ ss $
     putStrLn
+
+-- Local Variables:
+-- idris-load-packages: ("cil")
+-- End:

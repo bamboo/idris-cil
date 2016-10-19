@@ -10,16 +10,16 @@ IsA Object (TypedArray cilTy elTy) where {}
 IsA Array (TypedArray cilTy elTy) where {}
 
 total
-interp : CILTy -> Type
-interp (CILTyVal "" "int") = Int
-interp (CILTyVal "" "char") = Char
-interp (CILTyVal "" "bool") = Bool
-interp (CILTyRef "" "string") = String
-interp ty = CIL ty
+interpCILTy : CILTy -> Type
+interpCILTy (CILTyVal "" "int") = Int
+interpCILTy (CILTyVal "" "char") = Char
+interpCILTy (CILTyVal "" "bool") = Bool
+interpCILTy (CILTyRef "" "string") = String
+interpCILTy ty = CIL ty
 
 %inline
 TypedArrayOf : (elTy : CILTy) -> Type
-TypedArrayOf elTy = TypedArray (CILTyArr elTy) (interp elTy)
+TypedArrayOf elTy = TypedArray (CILTyArr elTy) (interpCILTy elTy)
 
 %inline
 Int32Array : Type
@@ -42,14 +42,13 @@ length {cilTy} {elT} a = invoke (CILInstance "get_Length")
                                 a
 
 %inline
-get' : (elTy : CILTy)
-    -> TypedArrayOf elTy
-    -> (index : Int)
-    -> {auto fty : FTy FFI_CIL [] (TypedArrayOf elTy -> Int -> CIL_IO (interp elTy))}
-    -> CIL_IO (interp elTy)
-get' elTy a i = invoke (CILInstance "get_Item")
-                       (TypedArrayOf elTy -> Int -> CIL_IO (interp elTy))
-                       a i
+get : TypedArray cilTy elT
+   -> (index : Int)
+   -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> Int -> CIL_IO elT)}
+   -> CIL_IO elT
+get {cilTy} {elT} a i = invoke (CILInstance "get_Item")
+                               (TypedArray cilTy elT -> Int -> CIL_IO elT)
+                               a i
 
 %inline
 set : TypedArray cilTy elT
@@ -66,23 +65,31 @@ newArrayOf : (elTy : CILTy) -> Int -> CIL_IO (TypedArrayOf elTy)
 newArrayOf elTy n = new (Int -> CIL_IO (TypedArrayOf elTy)) n
 
 %inline
+copyInto : TypedArray cilTy elT
+        -> Int
+        -> Vect n elT
+        -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> Int -> elT -> CIL_IO ())}
+        -> CIL_IO ()
+copyInto array i (x :: xs) = set array i x *> copyInto array (i + 1) xs
+copyInto _     _ []        = pure ()
+
+%inline
 arrayOf : (elTy : CILTy)
-       -> Vect n (interp elTy)
-       -> {auto fty : FTy FFI_CIL [] (TypedArrayOf elTy -> Int -> (interp elTy) -> CIL_IO ())}
+       -> Vect n (interpCILTy elTy)
+       -> {auto fty : FTy FFI_CIL [] (TypedArrayOf elTy -> Int -> (interpCILTy elTy) -> CIL_IO ())}
        -> CIL_IO (TypedArrayOf elTy)
-arrayOf {n} elTy v = do
+arrayOf {n} elTy xs = do
   array <- newArrayOf elTy (cast n)
-  for_ (zip [0..the Int (cast n)] (toList v)) $ \pair =>
-      set array (fst pair) (snd pair)
+  copyInto array 0 xs
   pure array
 
 %inline
-forEach_ : (elTy : CILTy)
-        -> TypedArrayOf elTy
-        -> (interp elTy -> CIL_IO ())
-        -> {auto fty : FTy FFI_CIL [] (TypedArrayOf elTy -> Int -> CIL_IO (interp elTy))}
+forEach_ : TypedArray cilTy elT
+        -> (elT -> CIL_IO ())
+        -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> Int -> CIL_IO elT)}
         -> CIL_IO ()
-forEach_ elTy array f =
-  for_ [0..!(length array) - 1] $ \i => do
-    e <- get' elTy array i
-    f e
+forEach_ array f = loop 0 (cast !(length array)) (\i => get array i >>= f)
+  where
+    loop : Int -> Nat -> (Int -> CIL_IO ()) -> CIL_IO ()
+    loop i (S n) f = f i *> loop (i + 1) n f
+    loop _ Z     _ = pure ()
