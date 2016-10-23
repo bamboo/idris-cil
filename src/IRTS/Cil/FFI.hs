@@ -69,11 +69,20 @@ foreignType (FIO t)                 = foreignType t
 foreignType (FApp cilTy [_, ty])
   | cilTy == sUN "CIL_Array" = foreignType ty
 
+foreignType (FApp cilTy [ty, _])
+  | cilTy == sUN "TypedArray" = foreignType ty
+
 foreignType (FApp cilTy [ty])
   | cilTy == sUN "CIL_CILT" = foreignType ty
 
+foreignType (FApp cilTy [ty])
+  | cilTy == sUN "CIL" = foreignType ty
+
 foreignType (FApp cilTy [_, ty, _])
   | cilTy == sUN "CIL_FnT" = foreignType ty
+
+foreignType (FApp cilTy [ty])
+  | cilTy == sUN "CIL_NullT" = foreignType ty
 
 foreignType (FApp cilTy [ty])
   | cilTy == sUN "CILTyArr" = Array $ foreignType ty

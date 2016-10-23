@@ -20,6 +20,8 @@ Kay, Alan
 module Main
 
 import CIL.FFI
+import CIL.FFI.Array
+import Data.Vect
 
 -- TODO: Move to rts
 AssemblyTy : CILTy
@@ -43,15 +45,15 @@ GetType =
   invoke (CILInstance "GetType")
          (Assembly -> String -> Bool -> CIL_IO RuntimeType)
 
-GetMethod : RuntimeType -> String -> CIL_IO MethodInfo
+GetMethod : RuntimeType -> String -> CIL_IO (Nullable MethodInfo)
 GetMethod =
   invoke (CILInstance "GetMethod")
-         (RuntimeType -> String -> CIL_IO MethodInfo)
+         (RuntimeType -> String -> CIL_IO (Nullable MethodInfo))
 
-Invoke : MethodInfo -> Object -> ObjectArray -> CIL_IO Object
+Invoke : Nullable MethodInfo -> Nullable Object -> Nullable ObjectArray -> CIL_IO Object
 Invoke =
   invoke (CILInstance "Invoke")
-         (MethodInfo -> Object -> ObjectArray -> CIL_IO Object)
+         (Nullable MethodInfo -> Nullable Object -> Nullable ObjectArray -> CIL_IO Object)
 
 %inline
 SystemMathMax : CILForeign
@@ -105,6 +107,10 @@ EmptyGuid =
   invoke (CILStaticField GuidTy "Empty")
          (CIL_IO Guid)
 
+%inline
+objectArrayFor : Vect _ Object -> CIL_IO ObjectArray
+objectArrayFor xs = arrayOf CILTyObj xs
+
 testValueType : CIL_IO ()
 testValueType = do
   guid  <- NewGuid
@@ -116,13 +122,13 @@ testExportedVoidFunction : RuntimeType -> CIL_IO ()
 testExportedVoidFunction type = do
   putStrLn "before exportedVoidIO"
   exportedVoidIO' <- type `GetMethod` "VoidFunction"
-  ret <- Invoke exportedVoidIO' (believe_me null) (believe_me null)
+  ret <- Invoke exportedVoidIO' null null
   putStrLn "after exportedVoidIO"
 
 testExportedBoolToStringIO : RuntimeType -> CIL_IO ()
 testExportedBoolToStringIO type = do
   exportedBoolToStringIO' <- type `GetMethod` "exportedBoolToStringIO"
-  ret <- Invoke exportedBoolToStringIO' (believe_me null) !(fromList [True])
+  ret <- Invoke exportedBoolToStringIO' null (asNullable !(objectArrayFor [asObject True]))
   putStrLn $ "exportedBoolToStringIO => " ++ !(ToString ret)
 
 record Person where
@@ -184,12 +190,12 @@ testInstanceMethods = do
 showMethod : RuntimeType -> String -> CIL_IO ()
 showMethod t n = do
   m <- t `GetMethod` n
-  ToString m >>= putStrLn
+  nullable (pure "method not found") ToString m >>= putStrLn
 
 testBoxingUnboxing : RuntimeType -> CIL_IO ()
 testBoxingUnboxing type = do
   meth <- type `GetMethod` "exportedIncInt"
-  ret <- Invoke meth (believe_me null) !(fromList [2])
+  ret <- Invoke meth null (asNullable !(objectArrayFor [asObject 2]))
   ToString ret >>= putStrLn
 
 main : CIL_IO ()
@@ -200,7 +206,7 @@ main = do
 
   asm <- GetExecutingAssembly
   type <- GetType asm "TheExports" True
-  for_ ["VoidFunction", "exportedBoolToString", "showMethod"] $
+  for_ (the (List _) ["VoidFunction", "exportedBoolToString", "showMethod"]) $
     showMethod type
 
   testExportedVoidFunction type
@@ -239,3 +245,7 @@ exports =
   Fun exportedIncInt CILDefault $ -- pass and get back value type
   Fun showMethod CILDefault -- export signature containing CIL type
   End
+
+-- Local Variables:
+-- idris-load-packages: ("cil")
+-- End:

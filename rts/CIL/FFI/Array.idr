@@ -26,6 +26,10 @@ Int32Array : Type
 Int32Array = TypedArrayOf CILTyInt32
 
 %inline
+ObjectArray : Type
+ObjectArray = TypedArrayOf CILTyObj
+
+%inline
 StringArray : Type
 StringArray = TypedArrayOf CILTyStr
 

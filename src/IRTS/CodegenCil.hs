@@ -215,18 +215,12 @@ cil (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
 cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
 
 cil (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
-  val <- gensym "val"
-  load v
-  tell [ localsInit [Local Char val]
-       , unbox_any Char
-       , stlocN val ]
+  val <- storeTemp Char v
   labels <- uniqueLabelsFor alts
-  endLabel <- gensym "END"
-  mapM_ (cgAlt endLabel val) (zip labels alts)
-  tell [ label endLabel ]
+  cgLabeledAlts (cgAlt val) alts labels
   where
-    cgAlt :: String -> String -> (String, SAlt) -> CilCodegen ()
-    cgAlt end val (l, SConstCase (Ch t) e) = do
+    cgAlt :: String -> Label -> (String, SAlt) -> CilCodegen ()
+    cgAlt val end (l, SConstCase (Ch t) e) = do
       tell [ ldc $ ord t
            , ldlocN val
            , ceq
@@ -234,7 +228,7 @@ cil (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
       cil e
       tell [ br end
            , label l ]
-    cgAlt end _ (l, SDefaultCase e) = do
+    cgAlt _ end (l, SDefaultCase e) = do
       cil e
       tell [ br end ]
     cgAlt _ _ (_, c) = unsupported "char case" c
@@ -253,7 +247,7 @@ cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
          unsupportedCase c        = error $ show c <> " in\n" <> show e
 
 cil (SChkCase _ [SDefaultCase e]) = cil e
-cil (SChkCase v alts) = cgCase v alts
+cil (SChkCase v alts) = cgChkCase v alts
 
 cil (SApp isTailCall n args) = do
   forM_ args load
@@ -332,9 +326,13 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
                                    , ldobj ty ]
 
         ldelemFor String = [ ldelem_ref ]
+        ldelemFor Cil.Object = [ ldelem_ref ]
         ldelemFor ty@ReferenceType{} = [ ldelem_ref ]
         ldelemFor ty    = error $ "No ldelem for " ++ show ty
 
+        stelemFor String = stelem_ref
+        stelemFor Cil.Object = stelem_ref
+        stelemFor ty@ReferenceType{} = stelem_ref
         stelemFor Int32 = stelem_i4
         stelemFor ty    = error $ "No stelem for " ++ show ty
 
@@ -449,7 +447,9 @@ isValueType _       = False
 
 loadRecordTag :: CilCodegen ()
 loadRecordTag = tell [ castclass recordTypeRef
-                     , ldfld Int32 "" recordTypeName "tag" ]
+                     , loadRecordTagField ]
+
+loadRecordTagField = ldfld Int32 "" recordTypeName "tag"
 
 cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen ()
 cgIfThenElse v thenAlt elseAlt cgBranch = do
@@ -492,18 +492,33 @@ cgConst c = unsupported "const" c
 -}
 
 cgCase :: LVar -> [SAlt] -> CilCodegen ()
-cgCase v alts@(SConstCase (I _) _ : _) = cgSwitchCase v alts loadTag altTag
+cgCase v alts@(SConstCase (I _) _ : _) = cgSwitchCase v alts (const loadTag) altTag
   where loadTag = tell [ unbox_any Int32 ]
         altTag (SConstCase (I t) _) = t
         altTag alt = error $ "expecting (SConstCase (I t)) got: " <> show alt
 
-cgCase v alts = cgSwitchCase v consecutiveAlts loadTag altTag
-  where consecutiveAlts = let (caseAlts, defaultAlts) = span isSConCase alts
-                          in fillInTheGaps altTag unreachableAlt caseAlts ++ defaultAlts
-        unreachableAlt tag = SConCase 0 tag unreachableName [] SNothing
-        loadTag = loadRecordTag
-        altTag (SConCase _ t _ _ _) = t
-        altTag alt = error $ "expecting SConCase got: " <> show alt
+cgCase v alts = cgSwitchCase v (consecutiveAltsFor alts) (const loadRecordTag) tagFromSConCase
+
+cgChkCase :: LVar -> [SAlt] -> CilCodegen ()
+cgChkCase v alts = cgSwitchCase v (consecutiveAltsFor alts) maybeLoadRecordTag tagFromSConCase
+  where maybeLoadRecordTag :: String -> CilCodegen ()
+        maybeLoadRecordTag defaultLabel = do
+          tell [ isinst recordTypeName ]
+          record <- storeTempFromStack recordTypeRef
+          tell [ ldlocN record
+               , brfalse defaultLabel
+               , ldlocN record
+               , loadRecordTagField
+               ]
+
+consecutiveAltsFor :: [SAlt] -> [SAlt]
+consecutiveAltsFor alts = let (caseAlts, defaultAlts) = span isSConCase alts
+                          in fillInTheGaps tagFromSConCase unreachableAlt caseAlts ++ defaultAlts
+  where unreachableAlt tag = SConCase 0 tag unreachableName [] SNothing
+
+tagFromSConCase :: SAlt -> Int
+tagFromSConCase (SConCase _ t _ _ _) = t
+tagFromSConCase alt = error $ "expecting SConCase got: " <> show alt
 
 isSConCase :: SAlt -> Bool
 isSConCase SConCase{} = True
@@ -523,40 +538,43 @@ uniqueLabelsFor alts = do
   uniqueLabelPrefix <- gensym "L"
   pure $ (uniqueLabelPrefix <>) . show <$> [0..(length alts - 1)]
 
-cgSwitchCase :: LVar -> [SAlt] -> CilCodegen () -> (SAlt -> Int) -> CilCodegen ()
+cgLabeledAlts :: (Label -> (Label, SAlt) -> CilCodegen ()) -> [SAlt] -> [Label] -> CilCodegen ()
+cgLabeledAlts cgAlt alts labels = do
+  endLabel <- gensym "END"
+  mapM_ (cgAlt endLabel) (zip labels alts)
+  tell [ label endLabel ]
+
+cgSwitchCase :: LVar -> [SAlt] -> (String -> CilCodegen ()) -> (SAlt -> Int) -> CilCodegen ()
 cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
   labels <- uniqueLabelsFor alts
-  endLabel <- gensym "END"
+  let defaultLabel = last labels
   load val
-  loadTag
+  loadTag defaultLabel
   tell [ ldc baseTag
        , sub
        , switch labels
-       , br (last labels) ]
-
-  mapM_ (cgAlt endLabel val) (zip labels alts)
-  tell [ label endLabel ]
+       , br defaultLabel ]
+  cgLabeledAlts (cgAlt val) alts labels
   where canBuildJumpTable (a:as) = canBuildJumpTable' (altTag a) as
         canBuildJumpTable _      = False
         canBuildJumpTable' _ [SDefaultCase _]     = True
         canBuildJumpTable' t (a:as) | t' == t + 1 = canBuildJumpTable' t' as where t' = altTag a
         canBuildJumpTable' _ _                    = False
         baseTag = altTag (head alts)
+        cgAlt v end (l, alt) = do
+            tell [ label l ]
+            cg alt
+            tell [ br end ]
+            where cg (SConstCase _ e) = cil e
+                  cg (SDefaultCase e) = cil e
+                  cg c                = cgSConCase v c
+
 cgSwitchCase _ alts _ _ = unsupported "switch case alternatives" (descAlt <$> alts)
 
 descAlt :: SAlt -> String
 descAlt (SConCase _ t _ _ _) = "SConCase " <> show t
 descAlt (SConstCase t _) = "SConstCase " <> show t
 descAlt (SDefaultCase _) = "SDefaultCase"
-
-cgAlt :: Label -> LVar -> (Label, SAlt) -> CilCodegen ()
-cgAlt end v (l, alt) = do
-  tell [ label l ]
-  cg alt
-  tell [ br end ]
-  where cg (SConstCase _ e) = cil e
-        cg (SDefaultCase e) = cil e
-        cg c                = cgSConCase v c
 
 storeLocal :: Int -> CilCodegen ()
 storeLocal i = do
@@ -717,6 +735,9 @@ cgOp LStrFloat              [s]  = cgTryParse Double64 s
 cgOp (LExternal name) []
   | name == sUN "prim__null" = tell [ ldnull ]
 
+cgOp (LExternal name) [x, y]
+  | name == sUN "prim__eqPtr" = load x >> load y >> tell [ ceq, boxInt32 ]
+
 cgOp (LExternal (sn -> "prim__singleFromDouble")) [x]  = cgPrimitiveCast Double64 Float32 conv_r4 x
 cgOp (LExternal (sn -> "prim__singleFromInteger")) [x] = cgPrimitiveCast Int32 Float32 conv_r4 x
 cgOp (LExternal (sn -> "prim__singleFromInt")) [x]     = cgPrimitiveCast Int32 Float32 conv_r4 x
@@ -778,8 +799,12 @@ cgPrimitiveCast from to inst var = do
 
 storeTemp :: PrimitiveType -> LVar -> CilCodegen String
 storeTemp localType localVar = do
-  tempName <- gensym "temp"
   loadAs localType localVar
+  storeTempFromStack localType
+
+storeTempFromStack :: PrimitiveType -> CilCodegen String
+storeTempFromStack localType = do
+  tempName <- gensym "temp"
   tell [ localsInit [ Local localType tempName ]
        , stlocN tempName ]
   pure tempName

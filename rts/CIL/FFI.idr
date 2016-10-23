@@ -77,6 +77,9 @@ data CILForeign =
   ||| Export a function under its original name.
   CILDefault
 
+||| A foreign reference that is allowed to have a null value.
+export data Nullable : Type -> Type
+
 mutual
   data CIL_IntTypes  : Type -> Type where
        CIL_IntChar   : CIL_IntTypes Char
@@ -92,6 +95,7 @@ mutual
        CIL_IntT  : CIL_IntTypes i -> CIL_Types i
        CIL_CILT  : CIL_Types (CIL ty)
        CIL_FnT   : CIL_FnTypes fnT -> CIL_Types (CilFn delegateTy fnT)
+       CIL_NullT : CIL_Types (Nullable ty)
 
   data CilFn   : CILTy -> Type -> Type where
        MkCilFn : (delegateTy : CILTy) -> (fn : fnT) -> CilFn delegateTy fnT
@@ -142,9 +146,6 @@ corlib = CIL . corlibTy
 Object : Type
 Object = CIL CILTyObj
 
-ObjectArray : Type
-ObjectArray = CIL (CILTyArr CILTyObj)
-
 %inline
 RuntimeTypeTy : CILTy
 RuntimeTypeTy = corlibTy "System.Type"
@@ -161,19 +162,29 @@ typeOf t = invoke (CILTypeOf t) (CIL_IO RuntimeType)
 interface IsA a b where {}
 
 IsA Object Object where {}
+IsA Object String where {}
+IsA Object Int where {}
+IsA Object Integer where {}
+IsA Object Bool where {}
+IsA Object Double where {}
 IsA Object RuntimeType where {}
+
+%inline
+asObject : IsA Object a => a -> Object
+asObject a = believe_me a
 
 ToString : IsA Object o => o -> CIL_IO String
 ToString obj =
   invoke (CILInstance "ToString")
          (Object -> CIL_IO String)
-         (believe_me obj)
+         (asObject obj)
 
 Equals : IsA Object a => a -> a -> CIL_IO Bool
 Equals x y =
   invoke (CILInstance "Equals")
          (Object -> Object -> CIL_IO Bool)
-         (believe_me x) (believe_me y)
+         (asObject x) (asObject y)
+
 
 namespace System.Array
 
@@ -193,12 +204,6 @@ namespace System.Array
     invoke (CILInstance "SetValue")
            (Array -> Object -> Int -> CIL_IO ())
 
-  partial
-  fromList : List a -> CIL_IO ObjectArray
-  fromList [v] = do
-    array <- CreateInstance !(typeOf CILTyObj) 1
-    SetValue array (believe_me v) 0
-    pure $ believe_me array
 
 namespace System.Console
 
@@ -226,8 +231,27 @@ namespace System.Convert
   ToInt32 : IsA Object a => a -> CIL_IO Int
   ToInt32 o =
     invoke (CILStatic (corlibTy "System.Convert") "ToInt32")
-           (Ptr -> CIL_IO Int)
-           (believe_me o)
+           (Object -> CIL_IO Int)
+           (asObject o)
+
+%inline
+null : Nullable a
+null = (believe_me prim__null)
+
+%inline
+nullable : (Lazy b) -> Lazy (a -> b) -> Nullable a -> b
+nullable d f n =
+  if (the Ptr (believe_me n)) == null
+    then d
+    else f (believe_me n)
+
+%inline
+asNullable : IsA Object a => a -> Nullable a
+asNullable a = believe_me a
+
+%inline
+notNull : Nullable a -> Maybe a
+notNull = nullable Nothing Just
 
 putStr : String -> CIL_IO ()
 putStr = putStr'
