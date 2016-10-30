@@ -4,6 +4,7 @@ import public CIL.FFI
 import Data.Vect
 
 %default total
+
 %access public export
 
 IsA Object (TypedArray cilTy elTy) where {}
@@ -40,10 +41,10 @@ CharArray = TypedArrayOf CILTyChar
 %inline
 length : TypedArray cilTy elT
       -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> CIL_IO Int)}
-      -> CIL_IO Int
-length {cilTy} {elT} a = invoke (CILInstance "get_Length")
-                                (TypedArray cilTy elT -> CIL_IO Int)
-                                a
+      -> CIL_IO Nat
+length {cilTy} {elT} a = cast <$> invoke (CILInstance "get_Length")
+                                         (TypedArray cilTy elT -> CIL_IO Int)
+                                         a
 
 %inline
 get : TypedArray cilTy elT
@@ -87,13 +88,35 @@ arrayOf {n} elTy xs = do
   copyInto array 0 xs
   pure array
 
-%inline
-forEach_ : TypedArray cilTy elT
-        -> (elT -> CIL_IO ())
-        -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> Int -> CIL_IO elT)}
-        -> CIL_IO ()
-forEach_ array f = loop 0 (cast !(length array)) (\i => get array i >>= f)
+namespace Array
+
+  %inline
+  foldl : (acc -> elem -> CIL_IO acc)
+       -> acc
+       -> TypedArray cilTy elem
+       -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> CIL_IO elem)}
+       -> CIL_IO acc
+  foldl f init array = loop 0 !(length array) (\acc, i => get array i >>= f acc) init
   where
-    loop : Int -> Nat -> (Int -> CIL_IO ()) -> CIL_IO ()
-    loop i (S n) f = f i *> loop (i + 1) n f
-    loop _ Z     _ = pure ()
+    loop : Int -> Nat -> (acc -> Int -> CIL_IO acc) -> acc -> CIL_IO acc
+    loop i (S n) f acc = f acc i >>= loop (i + 1) n f
+    loop _ Z     _ acc = pure acc
+
+  %inline
+  foldr : (elem -> acc -> CIL_IO acc)
+       -> acc
+       -> TypedArray cilTy elem
+       -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> CIL_IO elem)}
+       -> CIL_IO acc
+  foldr f init array = loop !(length array) (\acc, i => do e <- get array i; f e acc) init
+  where
+    loop : Nat -> (acc -> Int -> CIL_IO acc) -> acc -> CIL_IO acc
+    loop (S n) f acc = f acc (cast n) >>= loop n f
+    loop Z     _ acc = pure acc
+
+  %inline
+  forEach_ : TypedArray cilTy elem
+          -> (elem -> CIL_IO ())
+          -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> CIL_IO elem)}
+          -> CIL_IO ()
+  forEach_ array f = Array.foldl (\_, e => f e) () array
