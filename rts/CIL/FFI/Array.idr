@@ -7,8 +7,8 @@ import Data.Vect
 
 %access public export
 
-IsA Object (TypedArray cilTy elTy) where {}
-IsA Array (TypedArray cilTy elTy) where {}
+IsA Object (TypedArray cilTy elem) where {}
+IsA Array (TypedArray cilTy elem) where {}
 
 total
 interpCILTy : CILTy -> Type
@@ -39,30 +39,30 @@ CharArray : Type
 CharArray = TypedArrayOf CILTyChar
 
 %inline
-length : TypedArray cilTy elT
-      -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> CIL_IO Int)}
+length : TypedArray cilTy elem
+      -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> CIL_IO Int)}
       -> CIL_IO Nat
-length {cilTy} {elT} a = cast <$> invoke (CILInstance "get_Length")
-                                         (TypedArray cilTy elT -> CIL_IO Int)
+length {cilTy} {elem} a = cast <$> invoke (CILInstance "get_Length")
+                                         (TypedArray cilTy elem -> CIL_IO Int)
                                          a
 
 %inline
-get : TypedArray cilTy elT
+get : TypedArray cilTy elem
    -> (index : Int)
-   -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> Int -> CIL_IO elT)}
-   -> CIL_IO elT
-get {cilTy} {elT} a i = invoke (CILInstance "get_Item")
-                               (TypedArray cilTy elT -> Int -> CIL_IO elT)
+   -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> CIL_IO elem)}
+   -> CIL_IO elem
+get {cilTy} {elem} a i = invoke (CILInstance "get_Item")
+                               (TypedArray cilTy elem -> Int -> CIL_IO elem)
                                a i
 
 %inline
-set : TypedArray cilTy elT
+set : TypedArray cilTy elem
    -> (index : Int)
-   -> (element : elT)
-   -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> Int -> elT -> CIL_IO ())}
+   -> (element : elem)
+   -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> elem -> CIL_IO ())}
    -> CIL_IO ()
-set {cilTy} {elT} a i e = invoke (CILInstance "set_Item")
-                                 (TypedArray cilTy elT -> Int -> elT -> CIL_IO ())
+set {cilTy} {elem} a i e = invoke (CILInstance "set_Item")
+                                 (TypedArray cilTy elem -> Int -> elem -> CIL_IO ())
                                  a i e
 
 %inline
@@ -70,10 +70,10 @@ newArrayOf : (elTy : CILTy) -> Int -> CIL_IO (TypedArrayOf elTy)
 newArrayOf elTy n = new (Int -> CIL_IO (TypedArrayOf elTy)) n
 
 %inline
-copyInto : TypedArray cilTy elT
+copyInto : TypedArray cilTy elem
         -> Int
-        -> Vect n elT
-        -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elT -> Int -> elT -> CIL_IO ())}
+        -> Vect n elem
+        -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> elem -> CIL_IO ())}
         -> CIL_IO ()
 copyInto array i (x :: xs) = set array i x *> copyInto array (i + 1) xs
 copyInto _     _ []        = pure ()
