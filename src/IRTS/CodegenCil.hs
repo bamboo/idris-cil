@@ -124,10 +124,9 @@ exportedTypes ci = exportDecls ci >>= exports
 cilExport :: Export -> CilExport
 cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun f
   where f          = delegateFunction [MaPublic, MaStatic] retType exportName paramTypes io invocation
-        exportName = if null alias then cilName n else alias
-        alias      = case desc of
-                       FApp (UN (T.unpack -> "CILExport")) (FStr a:_) -> a
-                       _ -> ""
+        exportName = case desc of
+                       FApp (UN (T.unpack -> "CILExport")) (FStr alias:_) -> alias
+                       _ -> cilName n
         invocation = loadArgs <> [ call [] Cil.Object "" moduleName (cilName fn) (const Cil.Object <$> ps) ]
         loadArgs   = zip [0..] paramTypes >>= loadArg
         paramTypes = foreignType <$> ps
