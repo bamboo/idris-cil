@@ -236,7 +236,7 @@ namespace System.Convert
 
 %inline
 null : Nullable a
-null = (believe_me prim__null)
+null = believe_me prim__null
 
 %inline
 nullable : (Lazy b) -> Lazy (a -> b) -> Nullable a -> b
