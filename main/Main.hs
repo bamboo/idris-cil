@@ -1,9 +1,11 @@
 module Main where
 
 import Control.Monad (liftM)
+
 import IRTS.CodegenCil
 import IRTS.CodegenCommon
 import IRTS.Compiler
+
 import Idris.AbsSyntax
 import Idris.ElabDecls
 import Idris.Main
@@ -35,8 +37,5 @@ showUsage = do
 
 cilMain :: Opts -> Idris ()
 cilMain opts = do
-  elabPrims
-  _ <- loadInputs (inputs opts) Nothing
-  mainProg <- elabMain
-  ir <- compile (Via IBCFormat "cil") (output opts) (Just mainProg)
-  runIO $ codegenCil ir
+  ci <- compileCilCodegenInfo (inputs opts) (output opts)
+  runIO $ codegenCil ci

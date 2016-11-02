@@ -7,17 +7,15 @@ import           Control.Monad.Trans.State.Strict (StateT, evalStateT)
 import           Data.Monoid((<>))
 
 import           IRTS.CodegenCil
-import           IRTS.CodegenCommon
-import           IRTS.Compiler
 import           Idris.AbsSyntax
 import           Idris.ElabDecls
-import           Idris.Main
 
 import           System.Directory
 import           System.Exit
 import           System.FilePath
 import           System.Info (os)
 import           System.Process
+
 import           Test.Hspec (Spec, parallel, describe, it)
 import qualified Test.Hspec as H
 import           Test.Hspec.Expectations.Pretty
@@ -51,8 +49,7 @@ firstCommentIn f = takeComment <$> readFile f
 
 exec :: FilePath -> IO String
 exec input = do
-  ci <- compileCodegenInfo input output
-  codegenCil ci
+  compileCodegenInfo input output >>= codegenCil
   peverify output
   mono output
   where output = replaceExtension input "exe"
@@ -64,20 +61,13 @@ compileToBytecode files = traceProcess "idris" (options <> files)
 evalIdris :: Monad m => IState -> StateT IState (ExceptT e m) a -> m (Either e a)
 evalIdris istate prog = runExceptT $ evalStateT prog istate
 
-compileCodegenInfo :: String -> String -> IO CodegenInfo
+compileCodegenInfo :: String -> String -> IO CilCodegenInfo
 compileCodegenInfo input output = do
-  maybeCI <- evalIdris idrisInit $ codegenInfoFrom [bytecodeFile] output
+  maybeCI <- evalIdris idrisInit $ compileCilCodegenInfo [bytecodeFile] output
   case maybeCI of
     Left  e  -> error $ show e
     Right ci -> return ci
   where bytecodeFile = replaceExtension input "ibc"
-
-codegenInfoFrom :: [FilePath] -> FilePath -> Idris CodegenInfo
-codegenInfoFrom inputs output = do
-  elabPrims
-  _ <- loadInputs inputs Nothing
-  mainProg <- elabMain
-  compile (Via IBCFormat "cil") output (Just mainProg)
 
 mono :: String -> IO String
 mono exe = if os == "mingw32"

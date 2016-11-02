@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE ViewPatterns #-}
-module IRTS.CodegenCil (codegenCil) where
+module IRTS.CodegenCil (codegenCil, compileCilCodegenInfo, CilCodegenInfo) where
 
 import           Control.Monad.RWS.Strict hiding (local)
 import           Control.Monad.State.Strict
@@ -19,10 +19,14 @@ import qualified Data.Text as T
 import           IRTS.Cil.FFI
 import           IRTS.Cil.MaxStack
 import           IRTS.CodegenCommon
+import           IRTS.Compiler
 import           IRTS.Lang
 import           IRTS.Simplified
+import           Idris.AbsSyntax (Idris, IState, getIState, IRFormat(IBCFormat), Codegen(Via))
 import           Idris.Core.CaseTree (CaseType(Shared))
 import           Idris.Core.TT
+import           Idris.ElabDecls (elabPrims, elabMain)
+import           Idris.Main (loadInputs)
 
 import           Language.Cil
 import qualified Language.Cil as Cil
@@ -36,10 +40,21 @@ import           GHC.Float
 -- |A CIL instruction.
 type Instruction = MethodDecl
 
-codegenCil :: CodeGenerator
-codegenCil ci = do writeFileUTF8 cilFile cilText
-                   when (outputExtension /= ".il") $
-                     ilasm cilFile output
+type CilCodegenInfo = (CodegenInfo, IState)
+
+compileCilCodegenInfo :: [FilePath] -> FilePath -> Idris CilCodegenInfo
+compileCilCodegenInfo inputs output = do
+  elabPrims
+  _ <- loadInputs inputs Nothing
+  mainProg <- elabMain
+  ci <- compile (Via IBCFormat "cil") output (Just mainProg)
+  istate <- getIState
+  pure (ci, istate)
+
+codegenCil :: CilCodegenInfo -> IO ()
+codegenCil (ci, istate) = do writeFileUTF8 cilFile cilText
+                             when (outputExtension /= ".il") $
+                               ilasm cilFile output
   where cilFile = replaceExtension output "il"
         cilText = pr (assemblyFor ci) ""
         output  = outputFile ci
