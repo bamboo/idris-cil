@@ -4,9 +4,10 @@
 it works!
 True
 00000000-0000-0000-0000-000000000000
-Void VoidFunction()
-System.String exportedBoolToString(Boolean)
-Void printMethod(System.Type, System.String)
+VoidFunction : Void
+exportedBoolToString : (p0 : Boolean) -> String
+printMethod : (t : Type) -> (n : String) -> Void
+take3 : (defaultValue : String) -> (flag : Boolean) -> (c : Char) -> (i : Int32) -> (d : Double) -> String
 before exportedVoidIO
 exported!
 after exportedVoidIO
@@ -157,10 +158,24 @@ testInstanceMethods = do
   AppendLine sb "works!"
   ToString sb >>= Write
 
+showParameter : ParameterInfo -> CIL_IO String
+showParameter p = do
+  n <- get_Name p
+  t <- get_ParameterType p >>= get_Name
+  pure $ "(" ++ n ++ " : " ++ t ++ ")"
+
+showMethod : MethodInfo -> CIL_IO String
+showMethod m = do
+  name <- get_Name m
+  ps   <- foldr (\p, acc => (:: acc) <$> showParameter p) (the (List _) []) !(GetParameters m)
+  ret  <- get_ReturnType m >>= get_Name
+  let sig = ps ++ [ret]
+  pure $ name ++ " : " ++ (concat . intersperse " -> " $ sig)
+
 printMethod : RuntimeType -> String -> CIL_IO ()
 printMethod t n = do
   m <- t `GetMethod` n
-  nullable (pure "method not found") ToString m >>= putStrLn
+  nullable (pure "method not found") showMethod m >>= putStrLn
 
 testBoxingUnboxing : RuntimeType -> CIL_IO ()
 testBoxingUnboxing type = do
@@ -175,7 +190,7 @@ main = do
 
   asm <- GetExecutingAssembly
   type <- GetType asm "TheExports" True
-  for_ (the (List _) ["VoidFunction", "exportedBoolToString", "printMethod"]) $
+  for_ (the (List _) ["VoidFunction", "exportedBoolToString", "printMethod", "take3"]) $
     printMethod type
 
   testExportedVoidFunction type
@@ -202,6 +217,11 @@ exportedBoolToStringIO b = do
 exportedIncInt : Int -> Int
 exportedIncInt i = i + 1
 
+parameters (defaultValue: String, flag: Bool)
+
+  take3 : Char -> Int -> Double -> String
+  take3 c i d = if flag then defaultValue else show $ cast (ord c) + cast i + d
+
 exports : FFI_Export FFI_CIL "TheExports" [] -- declare exported functions on a type with given name
 exports =
   Data Person "Person" $
@@ -212,7 +232,8 @@ exports =
   Fun exportedBoolToString CILDefault $
   Fun exportedBoolToStringIO CILDefault $ -- export IO with return value
   Fun exportedIncInt CILDefault $ -- pass and get back value type
-  Fun printMethod CILDefault -- export signature containing CIL type
+  Fun printMethod CILDefault $ -- export signature containing CIL type
+  Fun take3 CILDefault
   End
 
 -- Local Variables:

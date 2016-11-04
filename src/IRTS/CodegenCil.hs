@@ -22,7 +22,7 @@ import           IRTS.CodegenCommon
 import           IRTS.Compiler
 import           IRTS.Lang
 import           IRTS.Simplified
-import           Idris.AbsSyntax (Idris, IState, getIState, IRFormat(IBCFormat), Codegen(Via))
+import           Idris.AbsSyntax (Idris, IState(idris_patdefs), getIState, IRFormat(IBCFormat), Codegen(Via))
 import           Idris.Core.CaseTree (CaseType(Shared))
 import           Idris.Core.TT
 import           Idris.ElabDecls (elabPrims, elabMain)
@@ -52,11 +52,12 @@ compileCilCodegenInfo inputs output = do
   pure (ci, istate)
 
 codegenCil :: CilCodegenInfo -> IO ()
-codegenCil (ci, istate) = do writeFileUTF8 cilFile cilText
-                             when (outputExtension /= ".il") $
-                               ilasm cilFile output
+codegenCil cci@(ci, istate) =
+  do writeFileUTF8 cilFile cilText
+     when (outputExtension /= ".il") $
+       ilasm cilFile output
   where cilFile = replaceExtension output "il"
-        cilText = pr (assemblyFor ci) ""
+        cilText = pr (assemblyFor cci) ""
         output  = outputFile ci
         outputExtension = takeExtension output
         writeFileUTF8 f s = BS.writeFile f $ UTF8.fromString s
@@ -68,15 +69,15 @@ type DelegateOutput = M.Map ForeignFunctionType MethodDef
 
 type DelegateWriter = State DelegateOutput
 
-assemblyFor :: CodegenInfo -> Assembly
-assemblyFor ci = Assembly [mscorlibRef] asmName types
+assemblyFor :: CilCodegenInfo -> Assembly
+assemblyFor cci@(ci, _) = Assembly [mscorlibRef] asmName types
   where asmName = quoted $ takeBaseName (outputFile ci)
-        types   = typesFor ci
+        types   = typesFor cci
 
-typesFor :: CodegenInfo -> [TypeDef]
-typesFor ci =
+typesFor :: CilCodegenInfo -> [TypeDef]
+typesFor cci@(ci, _) =
   let (mainModule, delegates) = runState (moduleFor ci) M.empty
-  in mainModule : recordType (M.elems delegates) : nothingType : exportedTypes ci
+  in mainModule : recordType (M.elems delegates) : nothingType : exportedTypes cci
 
 moduleFor :: CodegenInfo -> DelegateWriter TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
@@ -122,11 +123,11 @@ method decl@(SFun name ps _ sexp) = do
 data CilExport = CilFun  !MethodDef
                | CilType !TypeDef
 
-exportedTypes :: CodegenInfo -> [TypeDef]
-exportedTypes ci = exportDecls ci >>= exports
+exportedTypes :: CilCodegenInfo -> [TypeDef]
+exportedTypes cci@(ci, _) = exportDecls ci >>= exports
   where exports :: ExportIFace -> [TypeDef]
         exports (Export (sn -> "FFI_CIL") exportedDataType es) =
-            let cilExports = cilExport <$> es
+            let cilExports = cilExport cci <$> es
                 (cilFuns, cilTypes) = partition isCilFun cilExports
                 methods = (\(CilFun m) -> m) <$> cilFuns
                 types   = (\(CilType t) -> t) <$> cilTypes
@@ -136,19 +137,30 @@ exportedTypes ci = exportDecls ci >>= exports
                 publicClass name methods = classDef [CaPublic] name noExtends noImplements [] methods []
         exports e = error $ "Unsupported Export: " <> show e
 
-cilExport :: Export -> CilExport
-cilExport (ExportFun fn@(NS n _) desc rt ps) = CilFun f
-  where f          = delegateFunction [MaPublic, MaStatic] retType exportName paramTypes io invocation
+-- |Queries the Idris state for the parameter names of the first function definition with the given name.
+originalParameterNamesOf :: Name -> CilCodegenInfo -> Maybe [String]
+originalParameterNamesOf fn@(NS n _) (_, istate) = do
+  -- idris_patdefs is like an inverted index of all top-level pattern definitions
+  --     SimpleName -> Map FQN Definition
+  let patDefsBySimpleName = idris_patdefs istate
+  patDefsByName <- M.lookup n patDefsBySimpleName
+  ((paramStack, _, _) : _, _) <- M.lookup fn patDefsByName
+  pure (cilName . fst <$> reverse paramStack)
+
+cilExport :: CilCodegenInfo -> Export -> CilExport
+cilExport cci (ExportFun fn@(NS n _) desc rt ps) = CilFun f
+  where f          = delegateFunction [MaPublic, MaStatic] retType exportName parameters io invocation
+        retType    = foreignType rt
         exportName = case desc of
                        FApp (UN (T.unpack -> "CILExport")) (FStr alias:_) -> alias
                        _ -> cilName n
+        parameters = zip paramTypes (maybe paramNames (<> paramNames) (originalParameterNamesOf fn cci))
+        paramTypes = foreignType <$> ps
         invocation = loadArgs <> [ call [] Cil.Object "" moduleName (cilName fn) (const Cil.Object <$> ps) ]
         loadArgs   = zip [0..] paramTypes >>= loadArg
-        paramTypes = foreignType <$> ps
-        retType    = foreignType rt
         io         = isIO rt
 
-cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exportedDataType [ptr] [ctor] []
+cilExport _ (ExportData (FStr exportedDataType)) = CilType $ publicStruct exportedDataType [ptr] [ctor] []
   where ptr  = Field [FaAssembly, FaInitOnly] Cil.Object "ptr"
         ctor = Constructor [MaAssembly] Void [Param Nothing Cil.Object "ptr"]
                  [ ldarg 0
@@ -156,7 +168,7 @@ cilExport (ExportData (FStr exportedDataType)) = CilType $ publicStruct exported
                  , stfld Cil.Object "" exportedDataType "ptr"
                  , ret ]
 
-cilExport e = error $ "invalid export: " <> show e
+cilExport _ e = error $ "invalid export: " <> show e
 
 
 data CodegenInput = CodegenInput !SDecl !Int -- cached param count
@@ -411,7 +423,8 @@ delegateMethodFor fft = do
       let fn = "delegate" <> show (M.size delegates)
       let ForeignFunctionType{..} = fft
       let invocation = ldarg 0 : (zip [1..] parameterTypes >>= (<> [apply0]) . loadArg)
-      let f = delegateFunction [MaAssembly] returnType fn parameterTypes returnTypeIO invocation
+      let parameters = zip parameterTypes paramNames
+      let f = delegateFunction [MaAssembly] returnType fn parameters returnTypeIO invocation
       put $ st { delegates = M.insert fft f delegates }
       return fn
   where apply0 = call [] Cil.Object "" moduleName "APPLY0" [Cil.Object, Cil.Object]
@@ -420,10 +433,9 @@ cilTypeOf :: PrimitiveType -> CilCodegen ()
 cilTypeOf t = tell [ ldtoken t
                    , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
 
-delegateFunction :: [MethAttr] -> PrimitiveType -> MethodName -> [PrimitiveType] -> Bool -> [Instruction] -> MethodDef
-delegateFunction attrs retType fn paramTypes io invocation = Method attrs retType fn parameters body
-  where parameters = zipWith param [(0 :: Int)..] paramTypes
-        param i t  = Param Nothing t ("p" <> show i)
+delegateFunction :: [MethAttr] -> PrimitiveType -> MethodName -> [(PrimitiveType, ParamName)] -> Bool -> [Instruction] -> MethodDef
+delegateFunction attrs retType fn ps io invocation = Method attrs retType fn parameters body
+  where parameters = uncurry (Param Nothing) <$> ps
         body       = if io
                         then loadNothing : dup : invocation <> [runIO, popBoxOrCast, ret]
                         else invocation <> [popBoxOrCast, ret]
@@ -435,6 +447,8 @@ delegateFunction attrs retType fn paramTypes io invocation = Method attrs retTyp
                          t | isValueType t -> unbox_any t
                          t -> castclass t
 
+paramNames :: [String]
+paramNames = (("p" <>) . show) <$> [0..]
 
 -- Exported data types are encoded as structs with a single `ptr` field
 loadArg :: (Int, PrimitiveType) -> [Instruction]

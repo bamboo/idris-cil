@@ -63,6 +63,9 @@ namespace RuntimeType
 
 namespace MethodInfo
 
+  get_Name : MethodInfo -> CIL_IO String
+  get_Name = invoke (CILInstance "get_Name") (MethodInfo -> CIL_IO String)
+
   GetParameters : MethodInfo -> CIL_IO ParameterInfoArray
   GetParameters = invoke (CILInstance "GetParameters") (MethodInfo -> CIL_IO ParameterInfoArray)
 
