@@ -6,7 +6,7 @@ True
 00000000-0000-0000-0000-000000000000
 Void VoidFunction()
 System.String exportedBoolToString(Boolean)
-Void showMethod(System.Type, System.String)
+Void printMethod(System.Type, System.String)
 before exportedVoidIO
 exported!
 after exportedVoidIO
@@ -19,41 +19,8 @@ Kay, Alan
 
 module Main
 
-import CIL.FFI
-import CIL.FFI.Array
+import CIL.System.Reflection
 import Data.Vect
-
--- TODO: Move to rts
-AssemblyTy : CILTy
-AssemblyTy = corlibTy "System.Reflection.Assembly"
-
-Assembly : Type
-Assembly = CIL AssemblyTy
-
-MethodInfo : Type
-MethodInfo = corlib "System.Reflection.MethodInfo"
-
-implementation IsA Object MethodInfo where {}
-
-GetExecutingAssembly : CIL_IO Assembly
-GetExecutingAssembly =
-  invoke (CILStatic AssemblyTy "GetExecutingAssembly")
-         (CIL_IO Assembly)
-
-GetType : Assembly -> String -> Bool -> CIL_IO RuntimeType
-GetType =
-  invoke (CILInstance "GetType")
-         (Assembly -> String -> Bool -> CIL_IO RuntimeType)
-
-GetMethod : RuntimeType -> String -> CIL_IO (Nullable MethodInfo)
-GetMethod =
-  invoke (CILInstance "GetMethod")
-         (RuntimeType -> String -> CIL_IO (Nullable MethodInfo))
-
-Invoke : Nullable MethodInfo -> Nullable Object -> Nullable ObjectArray -> CIL_IO Object
-Invoke =
-  invoke (CILInstance "Invoke")
-         (Nullable MethodInfo -> Nullable Object -> Nullable ObjectArray -> CIL_IO Object)
 
 %inline
 SystemMathMax : CILForeign
@@ -118,18 +85,21 @@ testValueType = do
   printLn !(Equals guid guid')
   ToString !EmptyGuid >>= putStrLn
 
+invokeStaticMethod : RuntimeType -> String -> Nullable ObjectArray -> CIL_IO (Maybe Object)
+invokeStaticMethod type methodName args =
+  nullable (pure Nothing) (\method => Just <$> Invoke method null args) !(type `GetMethod` methodName)
+
 testExportedVoidFunction : RuntimeType -> CIL_IO ()
 testExportedVoidFunction type = do
   putStrLn "before exportedVoidIO"
-  exportedVoidIO' <- type `GetMethod` "VoidFunction"
-  ret <- Invoke exportedVoidIO' null null
+  invokeStaticMethod type "VoidFunction" null
   putStrLn "after exportedVoidIO"
 
 testExportedBoolToStringIO : RuntimeType -> CIL_IO ()
 testExportedBoolToStringIO type = do
-  exportedBoolToStringIO' <- type `GetMethod` "exportedBoolToStringIO"
-  ret <- Invoke exportedBoolToStringIO' null (asNullable !(objectArrayFor [asObject True]))
-  putStrLn $ "exportedBoolToStringIO => " ++ !(ToString ret)
+  ret <- invokeStaticMethod type "exportedBoolToStringIO" (asNullable !(objectArrayFor [asObject True]))
+  retString <- maybe (pure "ERROR") ToString ret
+  putStrLn $ "exportedBoolToStringIO => " ++ retString
 
 record Person where
   constructor MkPerson
@@ -151,8 +121,8 @@ ExportedPerson = CIL $ CILTyVal "" "Person"
 ||| into its internal representation.
 unForeign : ExportedPerson -> CIL_IO Person
 unForeign ep = do
- ptr <- invoke (CILInstanceField "ptr") (ExportedPerson -> CIL_IO Ptr) ep
- pure $ believe_me ptr
+  ptr <- invoke (CILInstanceField "ptr") (ExportedPerson -> CIL_IO Ptr) ep
+  pure $ believe_me ptr
 
 ||| Invokes the exported function `createPerson` via the FFI.
 invokeCreatePerson : String -> String -> CIL_IO ExportedPerson
@@ -187,16 +157,15 @@ testInstanceMethods = do
   AppendLine sb "works!"
   ToString sb >>= Write
 
-showMethod : RuntimeType -> String -> CIL_IO ()
-showMethod t n = do
+printMethod : RuntimeType -> String -> CIL_IO ()
+printMethod t n = do
   m <- t `GetMethod` n
   nullable (pure "method not found") ToString m >>= putStrLn
 
 testBoxingUnboxing : RuntimeType -> CIL_IO ()
 testBoxingUnboxing type = do
-  meth <- type `GetMethod` "exportedIncInt"
-  ret <- Invoke meth null (asNullable !(objectArrayFor [asObject 2]))
-  ToString ret >>= putStrLn
+  ret <- invokeStaticMethod type "exportedIncInt" (asNullable !(objectArrayFor [asObject 2]))
+  maybe (pure "ERROR") ToString ret >>= putStrLn
 
 main : CIL_IO ()
 main = do
@@ -206,8 +175,8 @@ main = do
 
   asm <- GetExecutingAssembly
   type <- GetType asm "TheExports" True
-  for_ (the (List _) ["VoidFunction", "exportedBoolToString", "showMethod"]) $
-    showMethod type
+  for_ (the (List _) ["VoidFunction", "exportedBoolToString", "printMethod"]) $
+    printMethod type
 
   testExportedVoidFunction type
   testExportedBoolToStringIO type
@@ -243,7 +212,7 @@ exports =
   Fun exportedBoolToString CILDefault $
   Fun exportedBoolToStringIO CILDefault $ -- export IO with return value
   Fun exportedIncInt CILDefault $ -- pass and get back value type
-  Fun showMethod CILDefault -- export signature containing CIL type
+  Fun printMethod CILDefault -- export signature containing CIL type
   End
 
 -- Local Variables:

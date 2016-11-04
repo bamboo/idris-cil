@@ -4,5 +4,6 @@ modules = CIL.FFI
         , CIL.FFI.Array
         , CIL.FFI.Effects
         , CIL.FFI.Single
+        , CIL.System.Reflection
 
 pkgs = effects
