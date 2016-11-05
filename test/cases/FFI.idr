@@ -7,7 +7,7 @@ True
 VoidFunction : Void
 exportedBoolToString : (p0 : Boolean) -> String
 printMethod : (t : Type) -> (n : String) -> Void
-take3 : (defaultValue : String) -> (flag : Boolean) -> (c : Char) -> (i : Int32) -> (d : Double) -> String
+take5 : (defaultValue : String) -> (flag : Boolean) -> (c : Char) -> (i : Int32) -> (d : Double) -> String
 before exportedVoidIO
 exported!
 after exportedVoidIO
@@ -190,7 +190,7 @@ main = do
 
   asm <- GetExecutingAssembly
   type <- GetType asm "TheExports" True
-  for_ (the (List _) ["VoidFunction", "exportedBoolToString", "printMethod", "take3"]) $
+  for_ (the (List _) ["VoidFunction", "exportedBoolToString", "printMethod", "take5"]) $
     printMethod type
 
   testExportedVoidFunction type
@@ -219,8 +219,8 @@ exportedIncInt i = i + 1
 
 parameters (defaultValue: String, flag: Bool)
 
-  take3 : Char -> Int -> Double -> String
-  take3 c i d = if flag then defaultValue else show $ cast (ord c) + cast i + d
+  take5 : Char -> Int -> Double -> String
+  take5 c i d = if flag then defaultValue else show $ cast (ord c) + cast i + d
 
 exports : FFI_Export FFI_CIL "TheExports" [] -- declare exported functions on a type with given name
 exports =
@@ -233,7 +233,7 @@ exports =
   Fun exportedBoolToStringIO CILDefault $ -- export IO with return value
   Fun exportedIncInt CILDefault $ -- pass and get back value type
   Fun printMethod CILDefault $ -- export signature containing CIL type
-  Fun take3 CILDefault
+  Fun take5 CILDefault
   End
 
 -- Local Variables:
