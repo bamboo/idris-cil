@@ -71,3 +71,7 @@ main = do
   let lambda = \b => prefix ++ " " ++ show b
   bts <- delegate BoolToStringTy (Bool -> String) lambda
   testBoolToString bts
+
+-- Local Variables:
+-- idris-load-packages: ("cil")
+-- End:
