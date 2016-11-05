@@ -207,10 +207,12 @@ cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
 
 -- General constructors
 cil (SCon Nothing t _ fs) = do
-  tell [ ldc t
-       , ldc $ length fs
-       , newarr Cil.Object ]
-  mapM_ storeElement (zip [0..] fs)
+  tell [ ldc t ]
+  if null fs
+    then tell [ loadNoFields ]
+    else do tell [ ldc $ length fs
+                 , newarr Cil.Object ]
+            mapM_ storeElement (zip [0..] fs)
   tell [ newobj "" recordTypeName [Int32, array] ]
   where storeElement (i, f) = do
           tell [ dup
@@ -947,12 +949,12 @@ defaultCtorDef = Constructor [MaPublic] Void []
                    , ret ]
 
 recordType :: [MethodDef] -> TypeDef
-recordType methods = classDef [CaPrivate] className noExtends noImplements
-                              [tag, fields] allMethods []
+recordType methods = classDef [CaPrivate] className noExtends noImplements allFields allMethods []
   where className  = recordTypeName
         tag        = Field [FaPublic, FaInitOnly] Int32 "tag"
         fields     = Field [FaPublic, FaInitOnly] array "fields"
-        allMethods = [ctor, toString] <> methods
+        allFields  = [tag, fields, noFields]
+        allMethods = [cctor, ctor, toString] <> methods
         ctor       = Constructor [MaPublic] Void [ Param Nothing Int32 "tag"
                                                  , Param Nothing array "fields" ]
                        [ ldarg 0
@@ -972,6 +974,15 @@ recordType methods = classDef [CaPrivate] className noExtends noImplements
                        , objectToString
                        , call [] String "mscorlib" "System.String" "Concat" [String, String]
                        , ret ]
+        noFields   = Field [FaStatic, FaPublic, FaInitOnly] array "NoFields"
+        cctor      = Constructor [MaStatic] Void []
+                      [ ldc_i4 0
+                      , newarr Cil.Object
+                      , stsfld array "" className "NoFields"
+                      , ret ]
+
+loadNoFields :: Instruction
+loadNoFields = ldsfld array "" recordTypeName "NoFields"
 
 recordTypeRef :: PrimitiveType
 recordTypeRef = ReferenceType "" recordTypeName
