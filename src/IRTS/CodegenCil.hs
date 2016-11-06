@@ -43,6 +43,13 @@ type Instruction = MethodDecl
 
 type CilCodegenInfo = (CodegenInfo, IState)
 
+data CilCodegenState = CilCodegenState { delegateTypes :: M.Map ForeignFunctionType MethodDef
+                                       , assemblyRefs  :: !AssemblyRefSet  }
+
+type AssemblyRefSet = Set.Set AssemblyRef
+
+type CilCodegen = State CilCodegenState
+
 compileCilCodegenInfo :: [FilePath] -> FilePath -> Idris CilCodegenInfo
 compileCilCodegenInfo inputs output = do
   elabPrims
@@ -66,13 +73,6 @@ codegenCil cci@(ci, istate) =
 ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" <> output] "" >>= putStr
 
-data DelegateOutput = DelegateOutput { delegateTypes :: M.Map ForeignFunctionType MethodDef
-                                     , assemblyRefs  :: !AssemblyRefOutput  }
-
-type AssemblyRefOutput = Set.Set AssemblyRef
-
-type DelegateWriter = State DelegateOutput
-
 assemblyFor :: CilCodegenInfo -> Assembly
 assemblyFor cci@(ci, _) = Assembly (mscorlibRef : assemblyRefs) asmName types
   where asmName = quoted $ takeBaseName (outputFile ci)
@@ -80,11 +80,11 @@ assemblyFor cci@(ci, _) = Assembly (mscorlibRef : assemblyRefs) asmName types
 
 typesFor :: CilCodegenInfo -> ([TypeDef], [AssemblyRef])
 typesFor cci@(ci, _) =
-  let (mainModule, (DelegateOutput delegates assemblyRefs)) = runState (moduleFor ci) (DelegateOutput M.empty Set.empty)
-      types = mainModule : recordType (M.elems delegates) : nothingType : exportedTypes cci
+  let (mainModule, CilCodegenState{..}) = runState (moduleFor ci) (CilCodegenState M.empty Set.empty)
+      types = mainModule : recordType (M.elems delegateTypes) : nothingType : exportedTypes cci
   in (types, Set.toList assemblyRefs)
 
-moduleFor :: CodegenInfo -> DelegateWriter TypeDef
+moduleFor :: CodegenInfo -> CilCodegen TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
                   return $ classDef [CaPrivate] moduleName noExtends noImplements [] methods []
   where declsWithBody = filter hasBody decls
@@ -95,10 +95,10 @@ moduleFor ci = do methods <- mapM method declsWithBody
 moduleName :: String
 moduleName = "'λΠ'"
 
-method :: SDecl -> DelegateWriter MethodDef
+method :: SDecl -> CilCodegen MethodDef
 method decl@(SFun name ps _ sexp) = do
-  delegates <- get
-  let (CodegenState _ lc delegates', cilForSexp) = cilFor delegates decl sexp
+  cilCodegenState <- get
+  let (CilEmitterState _ lc cilCodegenState', cilForSexp) = cilFor cilCodegenState decl sexp
       body = if isEntryPoint
              then
                mconcat [ [entryPoint]
@@ -110,7 +110,7 @@ method decl@(SFun name ps _ sexp) = do
                        , locals lc
                        , cilForSexp
                        , [ret] ]
-  put delegates'
+  put cilCodegenState'
   return $ Method attrs retType (cilName name) parameters (withMaxStack (toList body))
   where attrs      = [MaStatic, MaAssembly]
         retType    = if isEntryPoint then Cil.Void else Cil.Object
@@ -176,46 +176,46 @@ cilExport _ (ExportData (FStr exportedDataType)) = CilType $ publicStruct export
 cilExport _ e = error $ "invalid export: " <> show e
 
 
-data CodegenInput = CodegenInput !SDecl !Int -- cached param count
+data SimpleDeclaration = SimpleDeclaration !SDecl !Int -- cached param count
 
-data CodegenState = CodegenState { nextSuffix :: !Int
-                                 , localCount :: !Int
-                                 , delegates  :: !DelegateOutput }
+type MethodBody = DList Instruction
 
-type CodegenOutput = DList Instruction
+data CilEmitterState = CilEmitterState { nextSuffix :: !Int
+                                       , localCount :: !Int
+                                       , cilCodegenState  :: !CilCodegenState }
 
-type CilCodegen a = RWS CodegenInput CodegenOutput CodegenState a
+type CilEmitter a = RWS SimpleDeclaration MethodBody CilEmitterState a
 
-insertAssemblyRef :: AssemblyRef -> CodegenState -> CodegenState
-insertAssemblyRef assemblyRef st@(CodegenState _ _ ds@(DelegateOutput _ assemblyRefs)) =
-  st { delegates = ds { assemblyRefs = Set.insert assemblyRef assemblyRefs } }
+insertAssemblyRef :: AssemblyRef -> CilEmitterState -> CilEmitterState
+insertAssemblyRef assemblyRef ces@(CilEmitterState _ _ cgs@(CilCodegenState _ assemblyRefs)) =
+  ces { cilCodegenState = cgs { assemblyRefs = Set.insert assemblyRef assemblyRefs } }
 
-cilFor :: DelegateOutput -> SDecl -> SExp -> (CodegenState, CodegenOutput)
-cilFor delegates decl@(SFun _ params _ _) sexp = execRWS (cil sexp)
-                                                         (CodegenInput decl paramCount)
-                                                         (CodegenState 0 0 delegates)
-  where paramCount = length params
+cilFor :: CilCodegenState -> SDecl -> SExp -> (CilEmitterState, MethodBody)
+cilFor cilCodegenState decl@(SFun _ params _ _) sexp =
+  execRWS (emit sexp)
+          (SimpleDeclaration decl (length params))
+          (CilEmitterState 0 0 cilCodegenState)
 
-cil :: SExp -> CilCodegen ()
-cil (SLet (Loc i) v e) = do
+emit :: SExp -> CilEmitter ()
+emit (SLet (Loc i) v e) = do
   case v of
     SNothing -> tell [ loadNothing ]
-    _        -> cil v
+    _        -> emit v
   localIndex i >>= storeLocal
-  cil e
+  emit e
 
-cil (SUpdate _ v) = cil v
-cil (SV v)        = load v
-cil (SConst c)    = cgConst c
-cil (SOp op args) = cgOp op args
-cil SNothing      = cgThrowException "SNothing"
+emit (SUpdate _ v) = emit v
+emit (SV v)        = load v
+emit (SConst c)    = cgConst c
+emit (SOp op args) = cgOp op args
+emit SNothing      = cgThrowException "SNothing"
 
 -- Special constructors: True, False
-cil (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
-cil (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
+emit (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
+emit (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
 
 -- General constructors
-cil (SCon Nothing t _ fs) = do
+emit (SCon Nothing t _ fs) = do
   tell [ ldc t ]
   if null fs
     then tell [ loadNoFields ]
@@ -230,48 +230,48 @@ cil (SCon Nothing t _ fs) = do
           tell [ stelem_ref ]
 
 -- ifThenElse
-cil (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
+emit (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
                     , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue =
   cgIfThenElse v thenAlt elseAlt $
     \thenLabel -> tell [ unbox_any Bool
                        , brtrue thenLabel ]
 
-cil (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
+emit (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
   cgIfThenElse v thenAlt elseAlt $
     \thenLabel -> do loadRecordTag
                      tell [ ldc tag
                           , beq thenLabel ]
 
 -- In some situations idris gives us a SCase with two default clauses
-cil (SCase Shared v [t@SConstCase{}, e@SDefaultCase{}, SDefaultCase{}]) = cil (SCase Shared v [t, e])
+emit (SCase Shared v [t@SConstCase{}, e@SDefaultCase{}, SDefaultCase{}]) = emit (SCase Shared v [t, e])
 
-cil (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
+emit (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
   cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
     cgBranchEq c thenLabel
 
-cil (SCase Shared v [c@SConCase{}]) = cgSConCase v c
+emit (SCase Shared v [c@SConCase{}]) = cgSConCase v c
 
-cil (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
+emit (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
   val <- storeTemp Char v
   labels <- uniqueLabelsFor alts
   cgLabeledAlts (cgAlt val) alts labels
   where
-    cgAlt :: String -> Label -> (String, SAlt) -> CilCodegen ()
+    cgAlt :: String -> Label -> (String, SAlt) -> CilEmitter ()
     cgAlt val end (l, SConstCase (Ch t) e) = do
       tell [ ldc $ ord t
            , ldlocN val
            , ceq
            , brfalse l ]
-      cil e
+      emit e
       tell [ br end
            , label l ]
     cgAlt _ end (l, SDefaultCase e) = do
-      cil e
+      emit e
       tell [ br end ]
     cgAlt _ _ (_, c) = unsupported "char case" c
 
 
-cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
+emit e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
                               in case defaultCase of
                                    [] -> cgCase v (sorted cases <> [SDefaultCase SNothing])
                                    _  -> cgCase v (sorted cases <> defaultCase)
@@ -283,45 +283,45 @@ cil e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
          caseType _               = True
          unsupportedCase c        = error $ show c <> " in\n" <> show e
 
-cil (SChkCase _ [SDefaultCase e]) = cil e
-cil (SChkCase v alts) = cgChkCase v alts
+emit (SChkCase _ [SDefaultCase e]) = emit e
+emit (SChkCase v alts) = cgChkCase v alts
 
-cil (SApp isTailCall n args) = do
+emit (SApp isTailCall n args) = do
   forM_ args load
   if isTailCall
     then tell [ tailcall app, ret, ldnull ]
     else tell [ app ]
   where app = call [] Cil.Object "" moduleName (cilName n) (const Cil.Object <$> args)
 
-cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
-  where emit :: CILForeign -> CilCodegen ()
+emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
+  where emitForeign :: CILForeign -> CilEmitter ()
 
-        emit (CILAssemblyRef assemblyName version pubKeyToken) = do
+        emitForeign (CILAssemblyRef assemblyName version pubKeyToken) = do
           modify (insertAssemblyRef (AssemblyRef assemblyName version pubKeyToken))
           tell [ loadNothing ]
 
-        emit (CILDelegate t) =
+        emitForeign (CILDelegate t) =
           cilDelegate t retDesc args
 
-        emit (CILTypeOf t) =
+        emitForeign (CILTypeOf t) =
           cilTypeOf t
 
-        emit (CILEnumValueOf t i) =
+        emitForeign (CILEnumValueOf t i) =
           tell [ ldc i
                , box t ]
 
-        emit CILConstructor =
+        emitForeign CILConstructor =
           case retType of
             Array _ -> emitNewArray retType
             _       -> emitNewInstance
 
-        emit (CILInstance fn) = do
+        emitForeign (CILInstance fn) = do
           let declType : paramTypes = sig
           case declType of
             Array _ -> emitArrayFFI declType fn
             _       -> emitInstanceFFI declType fn paramTypes
 
-        emit ffi = do
+        emitForeign ffi = do
           loadArgs
           case ffi of
             CILInstanceCustom fn sig' retType' ->
@@ -363,7 +363,7 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
             op           -> unsupported "array FFI" op
           acceptBoxOrPush retType
 
-        ldelemFor :: PrimitiveType -> CodegenOutput
+        ldelemFor :: PrimitiveType -> MethodBody
         ldelemFor Int32 = [ ldelem_i4 ]
         ldelemFor ty@ValueType{} = [ ldelema ty
                                    , ldobj ty ]
@@ -402,23 +402,23 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
         loadArgs = mapM_ loadTypedArg typedArgs
         typedArgs = zip sig (snd <$> args)
 
-        loadTypedArg :: (PrimitiveType, LVar) -> CilCodegen ()
+        loadTypedArg :: (PrimitiveType, LVar) -> CilEmitter ()
         loadTypedArg (t, loc) = do
           load loc
           castOrUnbox t
 
-        acceptBoxOrPush :: PrimitiveType -> CilCodegen ()
+        acceptBoxOrPush :: PrimitiveType -> CilEmitter ()
         acceptBoxOrPush Void              = tell [ loadNothing ]
         acceptBoxOrPush t | isValueType t = tell [ box t ]
         acceptBoxOrPush _                 = return ()
         sig                               = foreignType . fst <$> args
         retType                           = foreignType retDesc
 
-cil e = unsupported "expression" e
+emit e = unsupported "expression" e
 
 -- Delegates are emitted as instance functions of the general Record data type
 -- so we can avoid the overhead of an additional closure object at runtime
-cilDelegate :: PrimitiveType -> FDesc -> [(FDesc, LVar)] -> CilCodegen ()
+cilDelegate :: PrimitiveType -> FDesc -> [(FDesc, LVar)] -> CilEmitter ()
 cilDelegate delegateTy retDesc [(_, fnArg)] = do
   let fft = parseForeignFunctionType retDesc
   fn <- delegateMethodFor fft
@@ -430,23 +430,23 @@ cilDelegate delegateTy retDesc [(_, fnArg)] = do
        , newobj delegateAsm delegateTyName [Cil.Object, IntPtr] ]
 cilDelegate _ retDesc _ = unsupported "delegate" retDesc
 
-delegateMethodFor :: ForeignFunctionType -> CilCodegen String
+delegateMethodFor :: ForeignFunctionType -> CilEmitter String
 delegateMethodFor fft = do
-  st@(CodegenState _ _ ds@(DelegateOutput delegates _)) <- get
-  case M.lookup fft delegates of
+  st@(CilEmitterState _ _ cgs@CilCodegenState{..}) <- get
+  case M.lookup fft delegateTypes of
     Just (Method _ _ fn _ _) ->
       return fn
     _ -> do
-      let fn = "delegate" <> show (M.size delegates)
+      let fn = "delegate" <> show (M.size delegateTypes)
       let ForeignFunctionType{..} = fft
       let invocation = ldarg 0 : (zip [1..] parameterTypes >>= (<> [apply0]) . loadArg)
       let parameters = zip parameterTypes paramNames
       let f = delegateFunction [MaAssembly] returnType fn parameters returnTypeIO invocation
-      put $ st { delegates = ds { delegateTypes = M.insert fft f delegates } }
+      put $ st { cilCodegenState = cgs { delegateTypes = M.insert fft f delegateTypes } }
       return fn
   where apply0 = call [] Cil.Object "" moduleName "APPLY0" [Cil.Object, Cil.Object]
 
-cilTypeOf :: PrimitiveType -> CilCodegen ()
+cilTypeOf :: PrimitiveType -> CilEmitter ()
 cilTypeOf t = tell [ ldtoken t
                    , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
 
@@ -473,7 +473,7 @@ loadArg (i, ValueType "" exportedDataType) = [ ldarga i
                                              , ldfld Cil.Object "" exportedDataType "ptr" ]
 loadArg (i, t) = ldarg i : [box t | isValueType t]
 
-castOrUnbox :: PrimitiveType -> CilCodegen ()
+castOrUnbox :: PrimitiveType -> CilEmitter ()
 castOrUnbox t =
   tell [
     if isValueType t
@@ -490,25 +490,25 @@ isValueType Bool    = True
 isValueType Char    = True
 isValueType _       = False
 
-loadRecordTag :: CilCodegen ()
+loadRecordTag :: CilEmitter ()
 loadRecordTag = tell [ castclass recordTypeRef
                      , loadRecordTagField ]
 
 loadRecordTagField = ldfld Int32 "" recordTypeName "tag"
 
-cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilCodegen ()) -> CilCodegen ()
+cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilEmitter ()) -> CilEmitter ()
 cgIfThenElse v thenAlt elseAlt cgBranch = do
   thenLabel <- gensym "THEN"
   endLabel  <- gensym "END"
   load v
   cgBranch thenLabel
-  cil elseAlt
+  emit elseAlt
   tell [ br endLabel
        , label thenLabel ]
-  cil thenAlt
+  emit thenAlt
   tell [ label endLabel ]
 
-cgConst :: Const -> CilCodegen ()
+cgConst :: Const -> CilEmitter ()
 cgConst (Str s) = tell [ ldstr s ]
 cgConst (I i)   = cgConst . BI . fromIntegral $ i
 cgConst (BI i)  = tell [ ldc i
@@ -536,7 +536,7 @@ cgConst c = unsupported "const" c
   | Forgot
 -}
 
-cgCase :: LVar -> [SAlt] -> CilCodegen ()
+cgCase :: LVar -> [SAlt] -> CilEmitter ()
 cgCase v alts@(SConstCase (I _) _ : _) = cgSwitchCase v alts (const loadTag) altTag
   where loadTag = tell [ unbox_any Int32 ]
         altTag (SConstCase (I t) _) = t
@@ -544,9 +544,9 @@ cgCase v alts@(SConstCase (I _) _ : _) = cgSwitchCase v alts (const loadTag) alt
 
 cgCase v alts = cgSwitchCase v (consecutiveAltsFor alts) (const loadRecordTag) tagFromSConCase
 
-cgChkCase :: LVar -> [SAlt] -> CilCodegen ()
+cgChkCase :: LVar -> [SAlt] -> CilEmitter ()
 cgChkCase v alts = cgSwitchCase v (consecutiveAltsFor alts) maybeLoadRecordTag tagFromSConCase
-  where maybeLoadRecordTag :: String -> CilCodegen ()
+  where maybeLoadRecordTag :: String -> CilEmitter ()
         maybeLoadRecordTag defaultLabel = do
           tell [ isinst recordTypeName ]
           record <- storeTempFromStack recordTypeRef
@@ -578,18 +578,18 @@ fillInTheGaps extract create = go empty
                             in go (acc <> singleton i <> fromList (create <$> gap)) (j:rest)
         go acc rest       = toList acc <> rest
 
-uniqueLabelsFor :: [a] -> CilCodegen [String]
+uniqueLabelsFor :: [a] -> CilEmitter [String]
 uniqueLabelsFor alts = do
   uniqueLabelPrefix <- gensym "L"
   pure $ (uniqueLabelPrefix <>) . show <$> [0..(length alts - 1)]
 
-cgLabeledAlts :: (Label -> (Label, SAlt) -> CilCodegen ()) -> [SAlt] -> [Label] -> CilCodegen ()
+cgLabeledAlts :: (Label -> (Label, SAlt) -> CilEmitter ()) -> [SAlt] -> [Label] -> CilEmitter ()
 cgLabeledAlts cgAlt alts labels = do
   endLabel <- gensym "END"
   mapM_ (cgAlt endLabel) (zip labels alts)
   tell [ label endLabel ]
 
-cgSwitchCase :: LVar -> [SAlt] -> (String -> CilCodegen ()) -> (SAlt -> Int) -> CilCodegen ()
+cgSwitchCase :: LVar -> [SAlt] -> (String -> CilEmitter ()) -> (SAlt -> Int) -> CilEmitter ()
 cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
   labels <- uniqueLabelsFor alts
   let defaultLabel = last labels
@@ -610,8 +610,8 @@ cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
             tell [ label l ]
             cg alt
             tell [ br end ]
-            where cg (SConstCase _ e) = cil e
-                  cg (SDefaultCase e) = cil e
+            where cg (SConstCase _ e) = emit e
+                  cg (SDefaultCase e) = emit e
                   cg c                = cgSConCase v c
 
 cgSwitchCase _ alts _ _ = unsupported "switch case alternatives" (descAlt <$> alts)
@@ -621,13 +621,13 @@ descAlt (SConCase _ t _ _ _) = "SConCase " <> show t
 descAlt (SConstCase t _) = "SConstCase " <> show t
 descAlt (SDefaultCase _) = "SDefaultCase"
 
-storeLocal :: Int -> CilCodegen ()
+storeLocal :: Int -> CilEmitter ()
 storeLocal i = do
   tell [ stloc i ]
   modify ensureLocal
-  where ensureLocal st@CodegenState{..} = st { localCount = max localCount (i + 1) }
+  where ensureLocal st@CilEmitterState{..} = st { localCount = max localCount (i + 1) }
 
-cgBranchEq :: Const -> String -> CilCodegen ()
+cgBranchEq :: Const -> String -> CilEmitter ()
 cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
 cgBranchEq (Ch c) target =
   tell [ unbox_any Char
@@ -639,7 +639,7 @@ cgBranchEq (I i) target =
        , beq target ]
 cgBranchEq c _ = unsupported "branch on const" c
 
-cgSConCase :: LVar -> SAlt -> CilCodegen ()
+cgSConCase :: LVar -> SAlt -> CilEmitter ()
 cgSConCase v (SConCase offset _ _ fs sexp) = do
   unless (null fs) $ do
     load v
@@ -648,14 +648,14 @@ cgSConCase v (SConCase offset _ _ fs sexp) = do
     offset' <- localIndex offset
     mapM_ project (zip [0..length fs - 1] [offset'..])
     tell [ pop ]
-  cil sexp
+  emit sexp
   where project (f, l) = do tell [ dup
                                  , ldc f
                                  , ldelem_ref ]
                             storeLocal l
 cgSConCase _ c = unsupported "SConCase" c
 
-cgOp :: PrimFn -> [LVar] -> CilCodegen ()
+cgOp :: PrimFn -> [LVar] -> CilEmitter ()
 cgOp LWriteStr [_, s] = do
   load s
   tell [ castclass String
@@ -815,7 +815,7 @@ cgOp (LExternal (sn -> "prim__singleShow")) [x] = cgPrimitiveToString x
 
 cgOp o _ = unsupportedOp o
 
-cgTryParse :: PrimitiveType -> LVar -> CilCodegen ()
+cgTryParse :: PrimitiveType -> LVar -> CilEmitter ()
 cgTryParse ty var = do
   let (asmName, tyName) = assemblyNameAndTypeFrom ty
   loadString var
@@ -827,7 +827,7 @@ cgTryParse ty var = do
        , ldlocN val
        , box ty ]
 
-cgSingleMathOp :: String -> LVar -> LVar -> CilCodegen ()
+cgSingleMathOp :: String -> LVar -> LVar -> CilEmitter ()
 cgSingleMathOp op x y = do
   loadAs Float32 x
   loadAs Float32 y
@@ -836,61 +836,61 @@ cgSingleMathOp op x y = do
 
 cgSingleOp = cgPrimitiveOp Float32 Float32
 
-cgPrimitiveCast :: PrimitiveType -> PrimitiveType -> Instruction -> LVar -> CilCodegen ()
+cgPrimitiveCast :: PrimitiveType -> PrimitiveType -> Instruction -> LVar -> CilEmitter ()
 cgPrimitiveCast from to inst var = do
   loadAs from var
   tell [ inst
        , box to ]
 
-storeTemp :: PrimitiveType -> LVar -> CilCodegen String
+storeTemp :: PrimitiveType -> LVar -> CilEmitter String
 storeTemp localType localVar = do
   loadAs localType localVar
   storeTempFromStack localType
 
-storeTempFromStack :: PrimitiveType -> CilCodegen String
+storeTempFromStack :: PrimitiveType -> CilEmitter String
 storeTempFromStack localType = do
   tempName <- gensym "temp"
   tell [ localsInit [ Local localType tempName ]
        , stlocN tempName ]
   pure tempName
 
-unsupportedOp :: PrimFn -> CilCodegen ()
+unsupportedOp :: PrimFn -> CilEmitter ()
 unsupportedOp = unsupported "operation"
 
-cgPrimitiveToString :: LVar -> CilCodegen ()
+cgPrimitiveToString :: LVar -> CilEmitter ()
 cgPrimitiveToString p = load p >> tell [ objectToString ]
 
 objectToString :: Instruction
 objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
 
-unsupported :: Show a => String -> a -> CilCodegen ()
+unsupported :: Show a => String -> a -> CilEmitter ()
 unsupported desc v = do
-  (CodegenInput decl _) <- ask
+  (SimpleDeclaration decl _) <- ask
   cgThrowException $ "Unsupported " <> desc <> " `" <> show v <> "' in\n" <> show decl
 
-cgThrowException :: String -> CilCodegen ()
+cgThrowException :: String -> CilEmitter ()
 cgThrowException message =
   tell [ ldstr message
        , newobj "mscorlib" "System.Exception" [String]
        , throw
        , ldnull ]
 
-gensym :: String -> CilCodegen String
+gensym :: String -> CilEmitter String
 gensym prefix = do
-  st@(CodegenState suffix _ _) <- get
+  st@(CilEmitterState suffix _ _) <- get
   put $ st { nextSuffix = suffix + 1 }
   return $ prefix <> show suffix
 
-cgInt32Op :: Instruction -> [LVar] -> CilCodegen ()
+cgInt32Op :: Instruction -> [LVar] -> CilEmitter ()
 cgInt32Op = cgNumOp Int32
 
-cgFloatOp :: Instruction -> [LVar] -> CilCodegen ()
+cgFloatOp :: Instruction -> [LVar] -> CilEmitter ()
 cgFloatOp = cgNumOp Double64
 
-cgNumOp :: PrimitiveType -> Instruction -> [LVar] -> CilCodegen ()
+cgNumOp :: PrimitiveType -> Instruction -> [LVar] -> CilEmitter ()
 cgNumOp t = cgPrimitiveOp t t
 
-cgPrimitiveOp :: PrimitiveType -> PrimitiveType -> Instruction -> [LVar] -> CilCodegen ()
+cgPrimitiveOp :: PrimitiveType -> PrimitiveType -> Instruction -> [LVar] -> CilEmitter ()
 cgPrimitiveOp argT resT op args = do
   forM_ args (loadAs argT)
   tell [ op
@@ -903,16 +903,16 @@ boxInt32    = box Int32
 boxChar     = box Char
 boxBoolean  = box Bool
 
-loadAs :: PrimitiveType -> LVar -> CilCodegen ()
+loadAs :: PrimitiveType -> LVar -> CilEmitter ()
 loadAs valueType l = load l >> tell [ unbox_any valueType ]
 
-loadString :: LVar -> CilCodegen ()
+loadString :: LVar -> CilEmitter ()
 loadString l = load l >> tell [ castclass String ]
 
 ldc :: (Integral n) => n -> Instruction
 ldc = ldc_i4 . fromIntegral
 
-load :: LVar -> CilCodegen ()
+load :: LVar -> CilEmitter ()
 load (Loc i) = do
   li <- localIndex i
   tell [
@@ -921,9 +921,9 @@ load (Loc i) = do
       else ldloc li ]
 load v = unsupported "LVar" v
 
-localIndex :: Offset -> CilCodegen Offset
+localIndex :: Offset -> CilEmitter Offset
 localIndex i = do
-  (CodegenInput _ paramCount) <- ask
+  (SimpleDeclaration _ paramCount) <- ask
   return $ i - paramCount
 
 -- |Unpacks a simple name from a namespaced name.
