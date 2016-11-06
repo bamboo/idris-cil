@@ -206,9 +206,9 @@ emit (SLet (Loc i) v e) = do
 
 emit (SUpdate _ v) = emit v
 emit (SV v)        = load v
-emit (SConst c)    = cgConst c
-emit (SOp op args) = cgOp op args
-emit SNothing      = cgThrowException "SNothing"
+emit (SConst c)    = emitConst c
+emit (SOp op args) = emitOp op args
+emit SNothing      = emitThrow "SNothing"
 
 -- Special constructors: True, False
 emit (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
@@ -232,12 +232,12 @@ emit (SCon Nothing t _ fs) = do
 -- ifThenElse
 emit (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
                     , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue =
-  cgIfThenElse v thenAlt elseAlt $
+  emitIfThenElse v thenAlt elseAlt $
     \thenLabel -> tell [ unbox_any Bool
                        , brtrue thenLabel ]
 
 emit (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
-  cgIfThenElse v thenAlt elseAlt $
+  emitIfThenElse v thenAlt elseAlt $
     \thenLabel -> do loadRecordTag
                      tell [ ldc tag
                           , beq thenLabel ]
@@ -246,18 +246,18 @@ emit (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
 emit (SCase Shared v [t@SConstCase{}, e@SDefaultCase{}, SDefaultCase{}]) = emit (SCase Shared v [t, e])
 
 emit (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
-  cgIfThenElse v thenAlt elseAlt $ \thenLabel ->
-    cgBranchEq c thenLabel
+  emitIfThenElse v thenAlt elseAlt $ \thenLabel ->
+    emitBranchEq c thenLabel
 
-emit (SCase Shared v [c@SConCase{}]) = cgSConCase v c
+emit (SCase Shared v [c@SConCase{}]) = emitSConCase v c
 
 emit (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
   val <- storeTemp Char v
   labels <- uniqueLabelsFor alts
-  cgLabeledAlts (cgAlt val) alts labels
+  emitLabeledAlts (emitAlt val) alts labels
   where
-    cgAlt :: String -> Label -> (String, SAlt) -> CilEmitter ()
-    cgAlt val end (l, SConstCase (Ch t) e) = do
+    emitAlt :: String -> Label -> (String, SAlt) -> CilEmitter ()
+    emitAlt val end (l, SConstCase (Ch t) e) = do
       tell [ ldc $ ord t
            , ldlocN val
            , ceq
@@ -265,16 +265,16 @@ emit (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
       emit e
       tell [ br end
            , label l ]
-    cgAlt _ end (l, SDefaultCase e) = do
+    emitAlt _ end (l, SDefaultCase e) = do
       emit e
       tell [ br end ]
-    cgAlt _ _ (_, c) = unsupported "char case" c
+    emitAlt _ _ (_, c) = unsupported "char case" c
 
 
 emit e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
                               in case defaultCase of
-                                   [] -> cgCase v (sorted cases <> [SDefaultCase SNothing])
-                                   _  -> cgCase v (sorted cases <> defaultCase)
+                                   [] -> emitCase v (sorted cases <> [SDefaultCase SNothing])
+                                   _  -> emitCase v (sorted cases <> defaultCase)
    where sorted = sortBy (compare `on` tag)
          tag (SConCase _ t _ _ _) = t
          tag (SConstCase (I t) _) = t
@@ -284,7 +284,7 @@ emit e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alt
          unsupportedCase c        = error $ show c <> " in\n" <> show e
 
 emit (SChkCase _ [SDefaultCase e]) = emit e
-emit (SChkCase v alts) = cgChkCase v alts
+emit (SChkCase v alts) = emitChkCase v alts
 
 emit (SApp isTailCall n args) = do
   forM_ args load
@@ -496,28 +496,28 @@ loadRecordTag = tell [ castclass recordTypeRef
 
 loadRecordTagField = ldfld Int32 "" recordTypeName "tag"
 
-cgIfThenElse :: LVar -> SExp -> SExp -> (String -> CilEmitter ()) -> CilEmitter ()
-cgIfThenElse v thenAlt elseAlt cgBranch = do
+emitIfThenElse :: LVar -> SExp -> SExp -> (String -> CilEmitter ()) -> CilEmitter ()
+emitIfThenElse v thenAlt elseAlt emitBranch = do
   thenLabel <- gensym "THEN"
   endLabel  <- gensym "END"
   load v
-  cgBranch thenLabel
+  emitBranch thenLabel
   emit elseAlt
   tell [ br endLabel
        , label thenLabel ]
   emit thenAlt
   tell [ label endLabel ]
 
-cgConst :: Const -> CilEmitter ()
-cgConst (Str s) = tell [ ldstr s ]
-cgConst (I i)   = cgConst . BI . fromIntegral $ i
-cgConst (BI i)  = tell [ ldc i
+emitConst :: Const -> CilEmitter ()
+emitConst (Str s) = tell [ ldstr s ]
+emitConst (I i)   = emitConst . BI . fromIntegral $ i
+emitConst (BI i)  = tell [ ldc i
                        , boxInt32 ]
-cgConst (Ch c)  = tell [ ldc $ ord c
+emitConst (Ch c)  = tell [ ldc $ ord c
                        , boxChar ]
-cgConst (Fl d)  = tell [ ldc_r8 d
+emitConst (Fl d)  = tell [ ldc_r8 d
                        , boxDouble64 ]
-cgConst c = unsupported "const" c
+emitConst c = unsupported "const" c
 {-
   = I Int
   | BI Integer
@@ -536,16 +536,16 @@ cgConst c = unsupported "const" c
   | Forgot
 -}
 
-cgCase :: LVar -> [SAlt] -> CilEmitter ()
-cgCase v alts@(SConstCase (I _) _ : _) = cgSwitchCase v alts (const loadTag) altTag
+emitCase :: LVar -> [SAlt] -> CilEmitter ()
+emitCase v alts@(SConstCase (I _) _ : _) = emitSwitchCase v alts (const loadTag) altTag
   where loadTag = tell [ unbox_any Int32 ]
         altTag (SConstCase (I t) _) = t
         altTag alt = error $ "expecting (SConstCase (I t)) got: " <> show alt
 
-cgCase v alts = cgSwitchCase v (consecutiveAltsFor alts) (const loadRecordTag) tagFromSConCase
+emitCase v alts = emitSwitchCase v (consecutiveAltsFor alts) (const loadRecordTag) tagFromSConCase
 
-cgChkCase :: LVar -> [SAlt] -> CilEmitter ()
-cgChkCase v alts = cgSwitchCase v (consecutiveAltsFor alts) maybeLoadRecordTag tagFromSConCase
+emitChkCase :: LVar -> [SAlt] -> CilEmitter ()
+emitChkCase v alts = emitSwitchCase v (consecutiveAltsFor alts) maybeLoadRecordTag tagFromSConCase
   where maybeLoadRecordTag :: String -> CilEmitter ()
         maybeLoadRecordTag defaultLabel = do
           tell [ isinst recordTypeName ]
@@ -583,14 +583,14 @@ uniqueLabelsFor alts = do
   uniqueLabelPrefix <- gensym "L"
   pure $ (uniqueLabelPrefix <>) . show <$> [0..(length alts - 1)]
 
-cgLabeledAlts :: (Label -> (Label, SAlt) -> CilEmitter ()) -> [SAlt] -> [Label] -> CilEmitter ()
-cgLabeledAlts cgAlt alts labels = do
+emitLabeledAlts :: (Label -> (Label, SAlt) -> CilEmitter ()) -> [SAlt] -> [Label] -> CilEmitter ()
+emitLabeledAlts emitAlt alts labels = do
   endLabel <- gensym "END"
-  mapM_ (cgAlt endLabel) (zip labels alts)
+  mapM_ (emitAlt endLabel) (zip labels alts)
   tell [ label endLabel ]
 
-cgSwitchCase :: LVar -> [SAlt] -> (String -> CilEmitter ()) -> (SAlt -> Int) -> CilEmitter ()
-cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
+emitSwitchCase :: LVar -> [SAlt] -> (String -> CilEmitter ()) -> (SAlt -> Int) -> CilEmitter ()
+emitSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
   labels <- uniqueLabelsFor alts
   let defaultLabel = last labels
   load val
@@ -599,22 +599,22 @@ cgSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
        , sub
        , switch labels
        , br defaultLabel ]
-  cgLabeledAlts (cgAlt val) alts labels
+  emitLabeledAlts (emitAlt val) alts labels
   where canBuildJumpTable (a:as) = canBuildJumpTable' (altTag a) as
         canBuildJumpTable _      = False
         canBuildJumpTable' _ [SDefaultCase _]     = True
         canBuildJumpTable' t (a:as) | t' == t + 1 = canBuildJumpTable' t' as where t' = altTag a
         canBuildJumpTable' _ _                    = False
         baseTag = altTag (head alts)
-        cgAlt v end (l, alt) = do
-            tell [ label l ]
-            cg alt
-            tell [ br end ]
-            where cg (SConstCase _ e) = emit e
-                  cg (SDefaultCase e) = emit e
-                  cg c                = cgSConCase v c
+        emitAlt v end (l, alt) = do
+          tell [ label l ]
+          case alt of
+            SConstCase _ e -> emit e
+            SDefaultCase e -> emit e
+            c              -> emitSConCase v c
+          tell [ br end ]
 
-cgSwitchCase _ alts _ _ = unsupported "switch case alternatives" (descAlt <$> alts)
+emitSwitchCase _ alts _ _ = unsupported "switch case alternatives" (descAlt <$> alts)
 
 descAlt :: SAlt -> String
 descAlt (SConCase _ t _ _ _) = "SConCase " <> show t
@@ -627,20 +627,20 @@ storeLocal i = do
   modify ensureLocal
   where ensureLocal st@CilEmitterState{..} = st { localCount = max localCount (i + 1) }
 
-cgBranchEq :: Const -> String -> CilEmitter ()
-cgBranchEq (BI i) target = cgBranchEq (I . fromIntegral $ i) target
-cgBranchEq (Ch c) target =
+emitBranchEq :: Const -> String -> CilEmitter ()
+emitBranchEq (BI i) target = emitBranchEq (I . fromIntegral $ i) target
+emitBranchEq (Ch c) target =
   tell [ unbox_any Char
        , ldc $ ord c
        , beq target ]
-cgBranchEq (I i) target =
+emitBranchEq (I i) target =
   tell [ unbox_any Int32
        , ldc i
        , beq target ]
-cgBranchEq c _ = unsupported "branch on const" c
+emitBranchEq c _ = unsupported "branch on const" c
 
-cgSConCase :: LVar -> SAlt -> CilEmitter ()
-cgSConCase v (SConCase offset _ _ fs sexp) = do
+emitSConCase :: LVar -> SAlt -> CilEmitter ()
+emitSConCase v (SConCase offset _ _ fs sexp) = do
   unless (null fs) $ do
     load v
     tell [ castclass recordTypeRef
@@ -653,41 +653,41 @@ cgSConCase v (SConCase offset _ _ fs sexp) = do
                                  , ldc f
                                  , ldelem_ref ]
                             storeLocal l
-cgSConCase _ c = unsupported "SConCase" c
+emitSConCase _ c = unsupported "SConCase" c
 
-cgOp :: PrimFn -> [LVar] -> CilEmitter ()
-cgOp LWriteStr [_, s] = do
+emitOp :: PrimFn -> [LVar] -> CilEmitter ()
+emitOp LWriteStr [_, s] = do
   load s
   tell [ castclass String
        , call [] Void "mscorlib" "System.Console" "Write" [String]
        , loadNothing ]
 
-cgOp LReadStr [_] =
+emitOp LReadStr [_] =
   tell [ call [] String "mscorlib" "System.Console" "ReadLine" [] ]
 
-cgOp LStrRev [s] = do
+emitOp LStrRev [s] = do
   loadString s
   tell [ callvirt charArray "mscorlib" "System.String" "ToCharArray" []
        , dup
        , call [] Void "mscorlib" "System.Array" "Reverse" [ReferenceType "mscorlib" "System.Array"]
        , newobj "mscorlib" "System.String" [charArray] ]
 
-cgOp LStrLen [s] = do
+emitOp LStrLen [s] = do
   loadString s
   tell [ callvirt Int32 "mscorlib" "System.String" "get_Length" []
        , boxInt32 ]
 
-cgOp LStrConcat args = do
+emitOp LStrConcat args = do
   forM_ args loadString
   tell [ call [] String "mscorlib" "System.String" "Concat" (const String <$> args) ]
 
-cgOp LStrCons [h, t] = do
+emitOp LStrCons [h, t] = do
   loadAs Char h
   tell [ call [] String "mscorlib" "System.Char" "ToString" [Char] ]
   loadString t
   tell [ call [] String "mscorlib" "System.String" "Concat" [String, String] ]
 
-cgOp LStrSubstr [index, count, s] = do
+emitOp LStrSubstr [index, count, s] = do
   indexOutOfRange <- gensym "indexOutOfRange"
   countInRange <- gensym "countInRange"
   end <- gensym "end"
@@ -721,102 +721,102 @@ cgOp LStrSubstr [index, count, s] = do
        , ldstr ""
        , label end ]
 
-cgOp LStrEq args = do
+emitOp LStrEq args = do
   forM_ args loadString
   tell [ call [] Bool "mscorlib" "System.String" "op_Equality" (const String <$> args)
        , boxInt32 ]
 
-cgOp LStrLt args = do
+emitOp LStrLt args = do
   forM_ args loadString
   tell [ call [CcInstance] Int32 "mscorlib" "System.String" "CompareTo" [String]
        , ldc_i4 0
        , clt
        , boxInt32 ]
 
-cgOp LStrHead [v] = do
+emitOp LStrHead [v] = do
   loadString v
   tell [ ldc_i4 0
        , call [CcInstance] Char "mscorlib" "System.String" "get_Chars" [Int32]
        , boxChar ]
 
-cgOp LStrTail [v] = do
+emitOp LStrTail [v] = do
   loadString v
   tell [ ldc_i4 1
        , call [CcInstance] String "mscorlib" "System.String" "Substring" [Int32] ]
 
-cgOp LStrIndex [s, i] = do
+emitOp LStrIndex [s, i] = do
   loadString s
   loadAs Int32 i
   tell [ callvirt Char "mscorlib" "System.String" "get_Chars" [Int32]
        , boxChar ]
 
-cgOp (LStrInt ITNative) [s] = cgTryParse Int32 s
+emitOp (LStrInt ITNative) [s] = emitTryParse Int32 s
 
-cgOp (LStrInt i) [_] = unsupported "LStrInt" i
+emitOp (LStrInt i) [_] = unsupported "LStrInt" i
 
-cgOp (LChInt ITNative) [c] = do
+emitOp (LChInt ITNative) [c] = do
   load c
   tell [ unbox_any Char
        , boxInt32 ]
 
-cgOp (LSExt ITNative ITBig) [i]  = load i
-cgOp (LZExt ITNative ITBig) [i]  = load i
-cgOp (LPlus (ATInt _))      args = cgInt32Op add args
-cgOp (LMinus (ATInt _))     args = cgInt32Op sub args
-cgOp (LTimes (ATInt _))     args = cgInt32Op mul args
-cgOp (LEq (ATInt ITChar))   args = cgPrimitiveOp Char Int32 ceq args
-cgOp (LEq (ATInt _))        args = cgInt32Op ceq args
-cgOp (LSLt (ATInt ITChar))  args = cgPrimitiveOp Char Int32 clt args
-cgOp (LSLt (ATInt _))       args = cgInt32Op clt args
-cgOp (LIntStr _)            [i]  = cgPrimitiveToString i
-cgOp (LIntFloat _)          [i]  = cgPrimitiveCast Int32 Double64 conv_r8 i
-cgOp (LTimes ATFloat)       args = cgFloatOp mul args
-cgOp (LSDiv ATFloat)        args = cgFloatOp Cil.div args
-cgOp (LPlus ATFloat)        args = cgFloatOp add args
-cgOp (LMinus ATFloat)       args = cgFloatOp sub args
-cgOp LFloatStr              [f]  = cgPrimitiveToString f
-cgOp LStrFloat              [s]  = cgTryParse Double64 s
+emitOp (LSExt ITNative ITBig) [i]  = load i
+emitOp (LZExt ITNative ITBig) [i]  = load i
+emitOp (LPlus (ATInt _))      args = emitInt32Op add args
+emitOp (LMinus (ATInt _))     args = emitInt32Op sub args
+emitOp (LTimes (ATInt _))     args = emitInt32Op mul args
+emitOp (LEq (ATInt ITChar))   args = emitPrimitiveOp Char Int32 ceq args
+emitOp (LEq (ATInt _))        args = emitInt32Op ceq args
+emitOp (LSLt (ATInt ITChar))  args = emitPrimitiveOp Char Int32 clt args
+emitOp (LSLt (ATInt _))       args = emitInt32Op clt args
+emitOp (LIntStr _)            [i]  = emitPrimitiveToString i
+emitOp (LIntFloat _)          [i]  = emitPrimitiveCast Int32 Double64 conv_r8 i
+emitOp (LTimes ATFloat)       args = emitFloatOp mul args
+emitOp (LSDiv ATFloat)        args = emitFloatOp Cil.div args
+emitOp (LPlus ATFloat)        args = emitFloatOp add args
+emitOp (LMinus ATFloat)       args = emitFloatOp sub args
+emitOp LFloatStr              [f]  = emitPrimitiveToString f
+emitOp LStrFloat              [s]  = emitTryParse Double64 s
 
-cgOp (LExternal name) []
+emitOp (LExternal name) []
   | name == sUN "prim__null" = tell [ ldnull ]
 
-cgOp (LExternal name) [x, y]
+emitOp (LExternal name) [x, y]
   | name == sUN "prim__eqPtr" = load x >> load y >> tell [ ceq, boxInt32 ]
 
-cgOp (LExternal (sn -> "prim__singleFromDouble")) [x]  = cgPrimitiveCast Double64 Float32 conv_r4 x
-cgOp (LExternal (sn -> "prim__singleFromInteger")) [x] = cgPrimitiveCast Int32 Float32 conv_r4 x
-cgOp (LExternal (sn -> "prim__singleFromInt")) [x]     = cgPrimitiveCast Int32 Float32 conv_r4 x
+emitOp (LExternal (sn -> "prim__singleFromDouble")) [x]  = emitPrimitiveCast Double64 Float32 conv_r4 x
+emitOp (LExternal (sn -> "prim__singleFromInteger")) [x] = emitPrimitiveCast Int32 Float32 conv_r4 x
+emitOp (LExternal (sn -> "prim__singleFromInt")) [x]     = emitPrimitiveCast Int32 Float32 conv_r4 x
 
-cgOp (LExternal (sn -> "prim__singleAdd")) args = cgSingleOp add args
-cgOp (LExternal (sn -> "prim__singleSub")) args = cgSingleOp sub args
-cgOp (LExternal (sn -> "prim__singleMul")) args = cgSingleOp mul args
-cgOp (LExternal (sn -> "prim__singleDiv")) args = cgSingleOp Cil.div args
+emitOp (LExternal (sn -> "prim__singleAdd")) args = emitSingleOp add args
+emitOp (LExternal (sn -> "prim__singleSub")) args = emitSingleOp sub args
+emitOp (LExternal (sn -> "prim__singleMul")) args = emitSingleOp mul args
+emitOp (LExternal (sn -> "prim__singleDiv")) args = emitSingleOp Cil.div args
 
-cgOp (LExternal (sn -> "prim__singleCompare")) [x, y] = do
+emitOp (LExternal (sn -> "prim__singleCompare")) [x, y] = do
   x' <- storeTemp Float32 x
   tell [ ldlocaN x' ]
   loadAs Float32 y
   tell [ call [CcInstance] Int32 "" "float32" "CompareTo" [Float32]
        , boxInt32 ]
 
-cgOp (LExternal (sn -> "prim__singleMax")) [x, y] = cgSingleMathOp "Max" x y
-cgOp (LExternal (sn -> "prim__singleMin")) [x, y] = cgSingleMathOp "Min" x y
-cgOp (LExternal (sn -> "prim__singleNeg")) [x] = do
+emitOp (LExternal (sn -> "prim__singleMax")) [x, y] = emitSingleMathOp "Max" x y
+emitOp (LExternal (sn -> "prim__singleMin")) [x, y] = emitSingleMathOp "Min" x y
+emitOp (LExternal (sn -> "prim__singleNeg")) [x] = do
   loadAs Float32 x
   tell [ neg
        , boxFloat32 ]
 
-cgOp (LExternal (sn -> "prim__singleAbs")) [x] = do
+emitOp (LExternal (sn -> "prim__singleAbs")) [x] = do
   loadAs Float32 x
   tell [ call [] Float32 "mscorlib" "System.Math" "Abs" [Float32]
        , boxFloat32 ]
 
-cgOp (LExternal (sn -> "prim__singleShow")) [x] = cgPrimitiveToString x
+emitOp (LExternal (sn -> "prim__singleShow")) [x] = emitPrimitiveToString x
 
-cgOp o _ = unsupportedOp o
+emitOp o _ = unsupportedOp o
 
-cgTryParse :: PrimitiveType -> LVar -> CilEmitter ()
-cgTryParse ty var = do
+emitTryParse :: PrimitiveType -> LVar -> CilEmitter ()
+emitTryParse ty var = do
   let (asmName, tyName) = assemblyNameAndTypeFrom ty
   loadString var
   val <- gensym "val"
@@ -827,17 +827,17 @@ cgTryParse ty var = do
        , ldlocN val
        , box ty ]
 
-cgSingleMathOp :: String -> LVar -> LVar -> CilEmitter ()
-cgSingleMathOp op x y = do
+emitSingleMathOp :: String -> LVar -> LVar -> CilEmitter ()
+emitSingleMathOp op x y = do
   loadAs Float32 x
   loadAs Float32 y
   tell [ call [] Float32 "mscorlib" "System.Math" op [Float32, Float32]
        , boxFloat32 ]
 
-cgSingleOp = cgPrimitiveOp Float32 Float32
+emitSingleOp = emitPrimitiveOp Float32 Float32
 
-cgPrimitiveCast :: PrimitiveType -> PrimitiveType -> Instruction -> LVar -> CilEmitter ()
-cgPrimitiveCast from to inst var = do
+emitPrimitiveCast :: PrimitiveType -> PrimitiveType -> Instruction -> LVar -> CilEmitter ()
+emitPrimitiveCast from to inst var = do
   loadAs from var
   tell [ inst
        , box to ]
@@ -857,8 +857,8 @@ storeTempFromStack localType = do
 unsupportedOp :: PrimFn -> CilEmitter ()
 unsupportedOp = unsupported "operation"
 
-cgPrimitiveToString :: LVar -> CilEmitter ()
-cgPrimitiveToString p = load p >> tell [ objectToString ]
+emitPrimitiveToString :: LVar -> CilEmitter ()
+emitPrimitiveToString p = load p >> tell [ objectToString ]
 
 objectToString :: Instruction
 objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
@@ -866,10 +866,10 @@ objectToString = callvirt String "mscorlib" "System.Object" "ToString" []
 unsupported :: Show a => String -> a -> CilEmitter ()
 unsupported desc v = do
   (SimpleDeclaration decl _) <- ask
-  cgThrowException $ "Unsupported " <> desc <> " `" <> show v <> "' in\n" <> show decl
+  emitThrow $ "Unsupported " <> desc <> " `" <> show v <> "' in\n" <> show decl
 
-cgThrowException :: String -> CilEmitter ()
-cgThrowException message =
+emitThrow :: String -> CilEmitter ()
+emitThrow message =
   tell [ ldstr message
        , newobj "mscorlib" "System.Exception" [String]
        , throw
@@ -881,17 +881,17 @@ gensym prefix = do
   put $ st { nextSuffix = suffix + 1 }
   return $ prefix <> show suffix
 
-cgInt32Op :: Instruction -> [LVar] -> CilEmitter ()
-cgInt32Op = cgNumOp Int32
+emitInt32Op :: Instruction -> [LVar] -> CilEmitter ()
+emitInt32Op = emitNumOp Int32
 
-cgFloatOp :: Instruction -> [LVar] -> CilEmitter ()
-cgFloatOp = cgNumOp Double64
+emitFloatOp :: Instruction -> [LVar] -> CilEmitter ()
+emitFloatOp = emitNumOp Double64
 
-cgNumOp :: PrimitiveType -> Instruction -> [LVar] -> CilEmitter ()
-cgNumOp t = cgPrimitiveOp t t
+emitNumOp :: PrimitiveType -> Instruction -> [LVar] -> CilEmitter ()
+emitNumOp t = emitPrimitiveOp t t
 
-cgPrimitiveOp :: PrimitiveType -> PrimitiveType -> Instruction -> [LVar] -> CilEmitter ()
-cgPrimitiveOp argT resT op args = do
+emitPrimitiveOp :: PrimitiveType -> PrimitiveType -> Instruction -> [LVar] -> CilEmitter ()
+emitPrimitiveOp argT resT op args = do
   forM_ args (loadAs argT)
   tell [ op
        , box resT ]
