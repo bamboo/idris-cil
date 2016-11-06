@@ -51,10 +51,8 @@ netStackChange _ (Br  _)       =  0
 netStackChange _  Break        =  0
 netStackChange _ (Brfalse _)   = -1
 netStackChange _ (Brtrue  _)   = -1
-netStackChange _ (Call cc r _ _ _ p) =
-    let retd = if r /= Void then 1 else 0 in
-    let insd = if null cc then 0 else -1 -- this (instance) call (only CC available)
-    in -(length p) + retd + insd
+netStackChange _ (CallMethod (GenericMethodInstance cc _ _ _ p r)) = netCallStackChange cc p r
+netStackChange _ (Call cc r _ _ _ p) = netCallStackChange cc p r
 -- NOTE: where did calli go?
 netStackChange _ (CallVirt r _ _ _ p)  =
     let retd = if r /= Void then 1 else 0
@@ -213,3 +211,9 @@ netStackChange _  Volatile     =  0
 netStackChange _ (VolatilePtr _) = 0
 netStackChange _ (UnalignedPtr _ _) = 0
 netStackChange _ x = error ("unknown: " ++ show x)
+
+netCallStackChange :: [CallConv] -> [PrimitiveType] -> PrimitiveType -> Int
+netCallStackChange cc p r =
+  let retd = if r /= Void then 1 else 0 in
+  let insd = if null cc then 0 else -1 -- this (instance) call (only CC available)
+  in -(length p) + retd + insd

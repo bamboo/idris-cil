@@ -14,6 +14,7 @@ import           Data.DList (DList, empty, singleton, fromList, toList)
 import           Data.Function (on)
 import           Data.List (partition, sortBy)
 import qualified Data.Map.Strict as M
+import qualified Data.Set as Set
 import qualified Data.Text as T
 
 import           IRTS.Cil.FFI
@@ -65,19 +66,23 @@ codegenCil cci@(ci, istate) =
 ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" <> output] "" >>= putStr
 
-type DelegateOutput = M.Map ForeignFunctionType MethodDef
+data DelegateOutput = DelegateOutput { delegateTypes :: M.Map ForeignFunctionType MethodDef
+                                     , assemblyRefs  :: !AssemblyRefOutput  }
+
+type AssemblyRefOutput = Set.Set AssemblyRef
 
 type DelegateWriter = State DelegateOutput
 
 assemblyFor :: CilCodegenInfo -> Assembly
-assemblyFor cci@(ci, _) = Assembly [mscorlibRef] asmName types
+assemblyFor cci@(ci, _) = Assembly (mscorlibRef : assemblyRefs) asmName types
   where asmName = quoted $ takeBaseName (outputFile ci)
-        types   = typesFor cci
+        (types, assemblyRefs) = typesFor cci
 
-typesFor :: CilCodegenInfo -> [TypeDef]
+typesFor :: CilCodegenInfo -> ([TypeDef], [AssemblyRef])
 typesFor cci@(ci, _) =
-  let (mainModule, delegates) = runState (moduleFor ci) M.empty
-  in mainModule : recordType (M.elems delegates) : nothingType : exportedTypes cci
+  let (mainModule, (DelegateOutput delegates assemblyRefs)) = runState (moduleFor ci) (DelegateOutput M.empty Set.empty)
+      types = mainModule : recordType (M.elems delegates) : nothingType : exportedTypes cci
+  in (types, Set.toList assemblyRefs)
 
 moduleFor :: CodegenInfo -> DelegateWriter TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
@@ -180,6 +185,10 @@ data CodegenState = CodegenState { nextSuffix :: !Int
 type CodegenOutput = DList Instruction
 
 type CilCodegen a = RWS CodegenInput CodegenOutput CodegenState a
+
+insertAssemblyRef :: AssemblyRef -> CodegenState -> CodegenState
+insertAssemblyRef assemblyRef st@(CodegenState _ _ ds@(DelegateOutput _ assemblyRefs)) =
+  st { delegates = ds { assemblyRefs = Set.insert assemblyRef assemblyRefs } }
 
 cilFor :: DelegateOutput -> SDecl -> SExp -> (CodegenState, CodegenOutput)
 cilFor delegates decl@(SFun _ params _ _) sexp = execRWS (cil sexp)
@@ -287,6 +296,10 @@ cil (SApp isTailCall n args) = do
 cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
   where emit :: CILForeign -> CilCodegen ()
 
+        emit (CILAssemblyRef assemblyName version pubKeyToken) = do
+          modify (insertAssemblyRef (AssemblyRef assemblyName version pubKeyToken))
+          tell [ loadNothing ]
+
         emit (CILDelegate t) =
           cilDelegate t retDesc args
 
@@ -323,6 +336,8 @@ cil (SForeign retDesc desc args) = emit $ parseDescriptor desc
             CILStaticField declType fn ->
               let (assemblyName, typeName) = assemblyNameAndTypeFrom declType
               in tell [ ldsfld   retType assemblyName typeName fn ]
+            CILCall method ->
+              tell [ callMethod method ]
             _ -> error $ "unsupported ffi descriptor: " <> show ffi
           acceptBoxOrPush retType
 
@@ -417,7 +432,7 @@ cilDelegate _ retDesc _ = unsupported "delegate" retDesc
 
 delegateMethodFor :: ForeignFunctionType -> CilCodegen String
 delegateMethodFor fft = do
-  st@(CodegenState _ _ delegates) <- get
+  st@(CodegenState _ _ ds@(DelegateOutput delegates _)) <- get
   case M.lookup fft delegates of
     Just (Method _ _ fn _ _) ->
       return fn
@@ -427,7 +442,7 @@ delegateMethodFor fft = do
       let invocation = ldarg 0 : (zip [1..] parameterTypes >>= (<> [apply0]) . loadArg)
       let parameters = zip parameterTypes paramNames
       let f = delegateFunction [MaAssembly] returnType fn parameters returnTypeIO invocation
-      put $ st { delegates = M.insert fft f delegates }
+      put $ st { delegates = ds { delegateTypes = M.insert fft f delegates } }
       return fn
   where apply0 = call [] Cil.Object "" moduleName "APPLY0" [Cil.Object, Cil.Object]
 

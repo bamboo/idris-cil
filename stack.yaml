@@ -3,7 +3,7 @@ packages:
   - location: .
   - location:
       git: https://github.com/bamboo/language-cil.git
-      commit: 60076ab304c4d83de9d3ca075e4abfb1b0b66385
+      commit: 3f343e48e89d08ba222f4d3091b7a06922301b14
     extra-dep: true
 flags:
   idris:

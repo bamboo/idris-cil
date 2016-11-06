@@ -14,8 +14,10 @@ data CILTy =
   CILTyArr CILTy |
   ||| a foreign generic type
   CILTyGen CILTy (List CILTy) |
-  ||| a foreign generic parameter
-  CILTyGenParam String
+  ||| a foreign generic parameter of a generic type
+  CILTyGenParam String |
+  ||| a foreign generic parameter of a generic method
+  CILTyGenMethodParam String
 
 Eq CILTy where
   (CILTyGen def args) == (CILTyGen def' args') = def  == def' && assert_total (args == args')
@@ -52,8 +54,24 @@ data CIL   : CILTy -> Type where
 data TypedArray   : CILTy -> Type -> Type where
      MkTypedArray : (ty : CILTy) -> (elemTy : Type) -> TypedArray ty elemTy
 
+||| A foreign method calling convention.
+data CILCallConv =
+  ||| Static calling convention.
+  CCCStatic |
+  ||| Instance calling convention.
+  CCCInstance
+
+||| A foreign method descriptor.
+data CILMethod =
+  ||| A generic method given its calling convention, declaring type, name, type arguments, parameter types and return type.
+  CILGenMethod CILCallConv CILTy String (List CILTy) (List CILTy) CILTy
+
 ||| A foreign descriptor.
 data CILForeign =
+  ||| Reference an external assembly by name, version and public key token.
+  CILAssemblyRef String String String |
+  ||| Call the given foreign method.
+  CILCall CILMethod | -- TODO: replace all other method forms by this one and introduce helper functions instead
   ||| Call the named instance method.
   CILInstance String |
   ||| Call the named instance method with the given signature.
@@ -114,6 +132,7 @@ CIL_IO : Type -> Type
 CIL_IO = IO' FFI_CIL
 
 ||| CIL FFI.
+%inline
 invoke : CILForeign -> (ty : Type) ->
          {auto fty : FTy FFI_CIL [] ty} -> ty
 invoke ffi ty = foreign FFI_CIL ffi ty
@@ -130,6 +149,10 @@ delegate : (ty : CILTy) -> (fnT : Type) -> fnT ->
 delegate ty fnT fn = invoke (CILDelegate ty)
                             (CilFn ty fnT -> CIL_IO (CilFn ty fnT))
                             (MkCilFn ty fn)
+%inline
+assemblyRef : String -> String -> String -> CIL_IO ()
+assemblyRef assemblyName version pubKeyToken =
+  invoke (CILAssemblyRef assemblyName version pubKeyToken) (CIL_IO ())
 
 %inline
 corlibTy : String -> CILTy

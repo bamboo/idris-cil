@@ -17,8 +17,10 @@ import           Data.Text hiding (map, init, last)
 import           IRTS.Lang (FDesc(..))
 import           Idris.Core.TT (Name(..), sUN)
 
-import           Language.Cil (PrimitiveType(..))
+import           Language.Cil (PrimitiveType(..), MethodRef(..), CallConv(..), Version)
 import           Language.Cil.Pretty (pr)
+
+import           IRTS.Cil.VersionParser
 
 type CILTy = PrimitiveType
 
@@ -28,12 +30,14 @@ data CILForeign
   | CILInstanceField  !String
   | CILStatic         !CILTy !String
   | CILStaticField    !CILTy !String
+  | CILCall           !MethodRef
   | CILConstructor
   | CILTypeOf         !CILTy
   | CILDelegate       !CILTy
   | CILEnumValueOf    !CILTy !Integer
   | CILExport         !String
   | CILDefault
+  | CILAssemblyRef    !String !Version !String
   deriving Show
 
 parseDescriptor :: FDesc -> CILForeign
@@ -55,7 +59,23 @@ parseDescriptor (FApp ffi [ty])
   | ffi == sUN "CILTypeOf"         = CILTypeOf (foreignType ty)
 parseDescriptor (FApp ffi [ty, FStr i])
   | ffi == sUN "CILEnumValueOf"    = CILEnumValueOf (foreignType ty) (read i)
+parseDescriptor (FApp ffi [method])
+  | ffi == sUN "CILCall"           = CILCall (foreignMethod method)
+parseDescriptor (FApp ffi [FStr n, FStr v, FStr pubKeyToken])
+  | ffi == sUN "CILAssemblyRef"    = CILAssemblyRef n (parseVersion v) pubKeyToken
 parseDescriptor e = error $ "invalid foreign descriptor: " <> show e
+
+foreignMethod :: FDesc -> MethodRef
+foreignMethod (FApp ctor [cc, declTy, FStr methodName, typeArgs, paramTys, retTy]) | ctor == sUN "CILGenMethod" =
+    GenericMethodInstance (foreignCallConvention cc)
+                          (foreignType declTy) methodName
+                          (foreignTypeList typeArgs) (foreignTypeList paramTys) (foreignType retTy)
+foreignMethod e = error $ "invalid foreign method descriptor: " <> show e
+
+foreignCallConvention :: FDesc -> [CallConv]
+foreignCallConvention (FCon n) | n == sUN "CCCStatic" = []
+foreignCallConvention (FCon n) | n == sUN "CCCInstance" = [CcInstance]
+foreignCallConvention e = error $ "invalid foreign calling convention: " <> show e
 
 isIO :: FDesc -> Bool
 isIO (FIO _) = True
@@ -113,13 +133,15 @@ foreignType (FApp cilTy [_, FCon (UN cilIntTy)])
          _               -> error $ "Unsupported foreign int type `" <> intName <> "'"
 
 foreignType (FApp cilTy [def, typeArgs])
-  | cilTy == sUN "CILTyGen" = let (ReferenceType assembly typeName) = cilTyDef
-                              in GenericReferenceTypeInstance assembly typeName cilTyArgs
-  where cilTyDef  = foreignType def
+  | cilTy == sUN "CILTyGen" = GenericReferenceTypeInstance assembly typeName cilTyArgs
+  where (ReferenceType assembly typeName) = foreignType def
         cilTyArgs = foreignTypeList typeArgs
 
 foreignType (FApp cilTy [FStr paramIndex])
   | cilTy == sUN "CILTyGenParam" = GenericType (read paramIndex)
+
+foreignType (FApp cilTy [FStr paramIndex])
+  | cilTy == sUN "CILTyGenMethodParam" = GenericMethodTypeParameter (read paramIndex)
 
 foreignType d = error $ "invalid type descriptor: " <> show d
 

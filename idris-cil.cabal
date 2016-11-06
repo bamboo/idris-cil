@@ -23,6 +23,7 @@ library
   exposed-modules:  IRTS.CodegenCil
                   , IRTS.Cil.UnreachableCodeRemoval
                   , IRTS.Cil.FFI
+                  , IRTS.Cil.VersionParser
                   , IRTS.Cil.MaxStack
   build-depends:    base >= 4.7 && <5
                   , containers
@@ -38,6 +39,7 @@ library
                   , transformers
                   , bytestring
                   , utf8-string
+                  , trifecta
 
 executable idris-codegen-cil
   main-is:            Main.hs
