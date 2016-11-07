@@ -14,6 +14,7 @@ import           Data.DList (DList, empty, singleton, fromList, toList)
 import           Data.Function (on)
 import           Data.List (partition, sortBy)
 import qualified Data.Map.Strict as M
+import qualified Data.IntSet as IntSet
 import qualified Data.Set as Set
 import qualified Data.Text as T
 
@@ -43,8 +44,9 @@ type Instruction = MethodDecl
 
 type CilCodegenInfo = (CodegenInfo, IState)
 
-data CilCodegenState = CilCodegenState { delegateTypes :: M.Map ForeignFunctionType MethodDef
-                                       , assemblyRefs  :: !AssemblyRefSet  }
+data CilCodegenState = CilCodegenState { delegateTypes :: !(M.Map ForeignFunctionType MethodDef)
+                                       , assemblyRefs  :: !AssemblyRefSet
+                                       , constTags     :: !IntSet.IntSet }
 
 type AssemblyRefSet = Set.Set AssemblyRef
 
@@ -80,9 +82,12 @@ assemblyFor cci@(ci, _) = Assembly (mscorlibRef : assemblyRefs) asmName types
 
 typesFor :: CilCodegenInfo -> ([TypeDef], [AssemblyRef])
 typesFor cci@(ci, _) =
-  let (mainModule, CilCodegenState{..}) = runState (moduleFor ci) (CilCodegenState M.empty Set.empty)
-      types = mainModule : recordType (M.elems delegateTypes) : nothingType : exportedTypes cci
+  let (mainModule, CilCodegenState{..}) = runState (moduleFor ci) emptyCilCodegenState
+      types = mainModule : recordType (M.elems delegateTypes) (IntSet.toList constTags) : nothingType : exportedTypes cci
   in (types, Set.toList assemblyRefs)
+
+emptyCilCodegenState :: CilCodegenState
+emptyCilCodegenState = CilCodegenState M.empty Set.empty IntSet.empty
 
 moduleFor :: CodegenInfo -> CilCodegen TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
@@ -187,8 +192,12 @@ data CilEmitterState = CilEmitterState { nextSuffix :: !Int
 type CilEmitter a = RWS SimpleDeclaration MethodBody CilEmitterState a
 
 insertAssemblyRef :: AssemblyRef -> CilEmitterState -> CilEmitterState
-insertAssemblyRef assemblyRef ces@(CilEmitterState _ _ cgs@(CilCodegenState _ assemblyRefs)) =
+insertAssemblyRef assemblyRef ces@(CilEmitterState _ _ cgs@CilCodegenState{..}) =
   ces { cilCodegenState = cgs { assemblyRefs = Set.insert assemblyRef assemblyRefs } }
+
+insertConstTag :: Int -> CilEmitterState -> CilEmitterState
+insertConstTag tag ces@(CilEmitterState _ _ cgs@CilCodegenState{..}) =
+  ces { cilCodegenState = cgs { constTags = IntSet.insert tag constTags } }
 
 cilFor :: CilCodegenState -> SDecl -> SExp -> (CilEmitterState, MethodBody)
 cilFor cilCodegenState decl@(SFun _ params _ _) sexp =
@@ -216,14 +225,15 @@ emit (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
 emit (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
 
 -- General constructors
-emit (SCon Nothing t _ fs) = do
-  tell [ ldc t ]
+emit (SCon Nothing t _ fs) =
   if null fs
-    then tell [ loadNoFields ]
-    else do tell [ ldc $ length fs
+    then do modify (insertConstTag t)
+            tell [ ldsfld recordTypeRef "" recordTypeName (constRecordFieldName t) ]
+    else do tell [ ldc t
+                 , ldc $ length fs
                  , newarr Cil.Object ]
             mapM_ storeElement (zip [0..] fs)
-  tell [ newobj "" recordTypeName [Int32, array] ]
+            tell [ newobj "" recordTypeName [Int32, array] ]
   where storeElement (i, f) = do
           tell [ dup
                , ldc_i4 i ]
@@ -1109,12 +1119,13 @@ defaultCtorDef = Constructor [MaPublic] Void []
                    , call [CcInstance] Void "" "object" ".ctor" []
                    , ret ]
 
-recordType :: [MethodDef] -> TypeDef
-recordType methods = classDef [CaPrivate] className noExtends noImplements allFields allMethods []
+recordType :: [MethodDef] -> [Int] -> TypeDef
+recordType methods constTags = classDef [CaPrivate] className noExtends noImplements allFields allMethods []
   where className  = recordTypeName
         tag        = Field [FaPublic, FaInitOnly] Int32 "tag"
         fields     = Field [FaPublic, FaInitOnly] array "fields"
-        allFields  = [tag, fields, noFields]
+        allFields  = [tag, fields] ++ constFields
+        constFields = (Field [FaStatic, FaPublic, FaInitOnly] recordTypeRef . constRecordFieldName) <$> constTags
         allMethods = [cctor, ctor, toString] <> methods
         ctor       = Constructor [MaPublic] Void [ Param Nothing Int32 "tag"
                                                  , Param Nothing array "fields" ]
@@ -1135,15 +1146,24 @@ recordType methods = classDef [CaPrivate] className noExtends noImplements allFi
                        , objectToString
                        , call [] String "mscorlib" "System.String" "Concat" [String, String]
                        , ret ]
-        noFields   = Field [FaStatic, FaPublic, FaInitOnly] array "NoFields"
-        cctor      = Constructor [MaStatic] Void []
-                      [ ldc_i4 0
+        cctor      = Constructor [MaStatic] Void [] $
+                      [ localsInit [ Local array "empty" ]
+                      , ldc_i4 0
                       , newarr Cil.Object
-                      , stsfld array "" className "NoFields"
-                      , ret ]
+                      , stloc 0 ]
+                      <> concatMap constFieldInitializer constTags
+                      <> [ ret ]
 
-loadNoFields :: Instruction
-loadNoFields = ldsfld array "" recordTypeName "NoFields"
+        constFieldInitializer :: Int -> [Instruction]
+        constFieldInitializer tag =
+          [ ldc_i4 (fromIntegral tag)
+          , ldloc 0  -- empty array, see cctor above
+          , newobj "" recordTypeName [Int32, array]
+          , stsfld recordTypeRef "" className (constRecordFieldName tag) ]
+
+
+constRecordFieldName :: Int -> String
+constRecordFieldName = ("R"++) . show
 
 recordTypeRef :: PrimitiveType
 recordTypeRef = ReferenceType "" recordTypeName
