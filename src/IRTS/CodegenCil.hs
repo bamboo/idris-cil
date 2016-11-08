@@ -46,9 +46,12 @@ type CilCodegenInfo = (CodegenInfo, IState)
 
 data CilCodegenState = CilCodegenState { delegateTypes :: !(M.Map ForeignFunctionType MethodDef)
                                        , assemblyRefs  :: !AssemblyRefSet
+                                       , cafs          :: !CAFs
                                        , constTags     :: !IntSet.IntSet }
 
 type AssemblyRefSet = Set.Set AssemblyRef
+
+type CAFs = M.Map Name TypeName
 
 type CilCodegen = State CilCodegenState
 
@@ -83,11 +86,16 @@ assemblyFor cci@(ci, _) = Assembly (mscorlibRef : assemblyRefs) asmName types
 typesFor :: CilCodegenInfo -> ([TypeDef], [AssemblyRef])
 typesFor cci@(ci, _) =
   let (mainModule, CilCodegenState{..}) = runState (moduleFor ci) emptyCilCodegenState
-      types = mainModule : recordType (M.elems delegateTypes) (IntSet.toList constTags) : nothingType : exportedTypes cci
+      recordType' = recordType (M.elems delegateTypes) (IntSet.toList constTags)
+      (exportedTypes', cafs') = runState (exportedTypes cci) cafs
+      types = mainModule : recordType' : nothingType : exportedTypes' ++ cafTypesFor (M.assocs cafs')
   in (types, Set.toList assemblyRefs)
 
+cafTypesFor :: [(Name, TypeName)] -> [TypeDef]
+cafTypesFor = fmap (uncurry cafTypeFor)
+
 emptyCilCodegenState :: CilCodegenState
-emptyCilCodegenState = CilCodegenState M.empty Set.empty IntSet.empty
+emptyCilCodegenState = CilCodegenState M.empty Set.empty M.empty IntSet.empty
 
 moduleFor :: CodegenInfo -> CilCodegen TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
@@ -133,15 +141,17 @@ method decl@(SFun name ps _ sexp) = do
 data CilExport = CilFun  !MethodDef
                | CilType !TypeDef
 
-exportedTypes :: CilCodegenInfo -> [TypeDef]
-exportedTypes cci@(ci, _) = exportDecls ci >>= exports
-  where exports :: ExportIFace -> [TypeDef]
-        exports (Export (sn -> "FFI_CIL") exportedDataType es) =
-            let cilExports = cilExport cci <$> es
-                (cilFuns, cilTypes) = partition isCilFun cilExports
-                methods = (\(CilFun m) -> m) <$> cilFuns
-                types   = (\(CilType t) -> t) <$> cilTypes
-            in publicClass exportedDataType methods : types
+type CAF a = State CAFs a
+
+exportedTypes :: CilCodegenInfo -> CAF [TypeDef]
+exportedTypes cci@(ci, _) = concatMapM exports (exportDecls ci)
+  where exports :: ExportIFace -> CAF [TypeDef]
+        exports (Export (sn -> "FFI_CIL") exportedDataType es) = do
+          cilExports <- mapM (cilExport cci) es
+          let (cilFuns, cilTypes) = partition isCilFun cilExports
+              methods = (\(CilFun m) -> m) <$> cilFuns
+              types   = (\(CilType t) -> t) <$> cilTypes
+          pure $ publicClass exportedDataType methods : types
           where isCilFun (CilFun _) = True
                 isCilFun _          = False
                 publicClass name methods = classDef [CaPublic] name noExtends noImplements [] methods []
@@ -157,20 +167,24 @@ originalParameterNamesOf fn@(NS n _) (_, istate) = do
   ((paramStack, _, _) : _, _) <- M.lookup fn patDefsByName
   pure (cilName . fst <$> reverse paramStack)
 
-cilExport :: CilCodegenInfo -> Export -> CilExport
-cilExport cci (ExportFun fn@(NS n _) desc rt ps) = CilFun f
-  where f          = delegateFunction [MaPublic, MaStatic] retType exportName parameters io invocation
-        retType    = foreignType rt
+cilExport :: CilCodegenInfo -> Export -> CAF CilExport
+cilExport cci (ExportFun fn@(NS n _) desc rt ps) = do
+  invocation <-
+    if null ps
+       then do instruction <- loadCAF fn
+               pure [instruction]
+       else pure (loadArgs <> [ app fn ps ])
+  pure . CilFun $ delegateFunction [MaPublic, MaStatic] retType exportName parameters io invocation
+  where retType    = foreignType rt
         exportName = case desc of
                        FApp (UN (T.unpack -> "CILExport")) (FStr alias:_) -> alias
                        _ -> cilName n
         parameters = zip paramTypes (maybe paramNames (<> paramNames) (originalParameterNamesOf fn cci))
         paramTypes = foreignType <$> ps
-        invocation = loadArgs <> [ call [] Cil.Object "" moduleName (cilName fn) (const Cil.Object <$> ps) ]
         loadArgs   = zip [0..] paramTypes >>= loadArg
         io         = isIO rt
 
-cilExport _ (ExportData (FStr exportedDataType)) = CilType $ publicStruct exportedDataType [ptr] [ctor] []
+cilExport _ (ExportData (FStr exportedDataType)) = pure . CilType $ publicStruct exportedDataType [ptr] [ctor] []
   where ptr  = Field [FaAssembly, FaInitOnly] Cil.Object "ptr"
         ctor = Constructor [MaAssembly] Void [Param Nothing Cil.Object "ptr"]
                  [ ldarg 0
@@ -289,7 +303,7 @@ emit (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
 
 
 emit e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
-                              in case defaultCase of
+                               in case defaultCase of
                                    [] -> emitCase v (sorted cases <> [SDefaultCase SNothing])
                                    _  -> emitCase v (sorted cases <> defaultCase)
    where sorted = sortBy (compare `on` tag)
@@ -303,12 +317,15 @@ emit e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alt
 emit (SChkCase _ [SDefaultCase e]) = emit e
 emit (SChkCase v alts) = emitChkCase v alts
 
-emit (SApp isTailCall n args) = do
-  forM_ args load
-  if isTailCall
-    then tell [ tailcall app, ret, ldnull ]
-    else tell [ app ]
-  where app = call [] Cil.Object "" moduleName (cilName n) (const Cil.Object <$> args)
+emit (SApp isTailCall n args) =
+  if null args
+    then do instruction <- liftCAFOperation $ loadCAF n
+            tell [ instruction ]
+    else do forM_ args load
+            if isTailCall
+              then tell [ tailcall app', ret, ldnull ]
+              else tell [ app' ]
+  where app' = app n args
 
 emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
   where emitForeign :: CILForeign -> CilEmitter ()
@@ -1101,16 +1118,19 @@ showName (SN sn)   = T.pack $ show sn
 showName e = error $ "Unsupported name `" <> show e <> "'"
 
 loadNothing :: Instruction
-loadNothing = ldsfld Cil.Object "" "Nothing" "Default"
+loadNothing = ldsfld Cil.Object "" "Nothing" nothingFieldName
+
+nothingFieldName :: FieldName
+nothingFieldName = "Value"
 
 nothingType :: TypeDef
 nothingType = classDef [CaPrivate] className noExtends noImplements
                     [nothing] [defaultCtorDef, cctor] []
   where className = "Nothing"
-        nothing   = Field [FaStatic, FaPublic, FaInitOnly] Cil.Object "Default"
+        nothing   = Field [FaStatic, FaPublic, FaInitOnly] Cil.Object nothingFieldName
         cctor     = Constructor [MaStatic] Void []
                       [ newobj "" className []
-                      , stsfld Cil.Object "" className "Default"
+                      , stsfld Cil.Object "" className nothingFieldName
                       , ret ]
 
 defaultCtorDef :: MethodDef
@@ -1118,6 +1138,43 @@ defaultCtorDef = Constructor [MaPublic] Void []
                    [ ldarg 0
                    , call [CcInstance] Void "" "object" ".ctor" []
                    , ret ]
+
+liftCAFOperation :: CAF a -> CilEmitter a
+liftCAFOperation op = do
+  ces <- get
+  let cgs = cilCodegenState ces
+      (v, cafs') = runState op (cafs cgs)
+  put ces { cilCodegenState = cgs { cafs = cafs' } }
+  pure v
+
+loadCAF :: Name -> CAF Instruction
+loadCAF n = do
+  cafTypeName <- cafTypeNameFor n
+  pure $ ldsfld Cil.Object "" cafTypeName cafFieldName
+
+cafTypeNameFor :: Name -> CAF TypeName
+cafTypeNameFor n = do
+  cafs <- get
+  case M.lookup n cafs of
+    Just typeName ->
+      pure typeName
+    Nothing       ->
+      let typeName = "CAF" ++ show (length cafs)
+      in do put $ M.insert n typeName cafs
+            pure typeName
+
+cafFieldName :: FieldName
+cafFieldName = "Value"
+
+cafTypeFor :: Name -> TypeName -> TypeDef
+cafTypeFor caf className = classDef [CaPrivate] className noExtends noImplements allFields allMethods []
+  where tag        = Field [FaStatic, FaPublic, FaInitOnly] Cil.Object cafFieldName
+        allFields  = [tag]
+        allMethods = [cctor, defaultCtorDef]
+        cctor      = Constructor [MaStatic] Void []
+                      [ app caf []
+                      , stsfld Cil.Object "" className cafFieldName
+                      , ret ]
 
 recordType :: [MethodDef] -> [Int] -> TypeDef
 recordType methods constTags = classDef [CaPrivate] className noExtends noImplements allFields allMethods []
@@ -1195,3 +1252,9 @@ quoted name = "'" <> (name >>= validChar) <> "'"
         validChar c = if c == '\''
                          then "\\'"
                          else [c]
+
+app :: Name -> [a] -> Instruction
+app n args = call [] Cil.Object "" moduleName (cilName n) (const Cil.Object <$> args)
+
+concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
+concatMapM a b = concat <$> mapM a b
