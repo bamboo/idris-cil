@@ -101,7 +101,7 @@ emptyCilCodegenState = CilCodegenState M.empty Set.empty M.empty IntSet.empty In
 
 moduleFor :: CodegenInfo -> CilCodegen TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
-                  return $ classDef [CaPrivate] moduleName noExtends noImplements [] methods []
+                  return $ privateSealedClass moduleName noExtends noImplements [] methods []
   where declsWithBody = filter hasBody decls
         decls         = snd <$> simpleDecls ci
         hasBody (SFun _ _ _ SNothing) = False
@@ -156,7 +156,7 @@ exportedTypes cci@(ci, _) = concatMapM exports (exportDecls ci)
           pure $ publicClass exportedDataType methods : types
           where isCilFun (CilFun _) = True
                 isCilFun _          = False
-                publicClass name methods = classDef [CaPublic] name noExtends noImplements [] methods []
+                publicClass name methods = publicSealedClass name noExtends noImplements [] methods []
         exports e = error $ "Unsupported Export: " <> show e
 
 -- |Queries the Idris state for the parameter names of the first function definition with the given name.
@@ -1130,7 +1130,7 @@ nothingFieldName :: FieldName
 nothingFieldName = "Value"
 
 nothingType :: TypeDef
-nothingType = classDef [CaPrivate] className noExtends noImplements
+nothingType = privateSealedClass className noExtends noImplements
                     [nothing] [defaultCtorDef, cctor] []
   where className = "Nothing"
         nothing   = Field [FaStatic, FaPublic, FaInitOnly] Cil.Object nothingFieldName
@@ -1173,7 +1173,7 @@ cafFieldName :: FieldName
 cafFieldName = "Value"
 
 cafTypeFor :: Name -> TypeName -> TypeDef
-cafTypeFor caf className = classDef [CaPrivate] className noExtends noImplements allFields allMethods []
+cafTypeFor caf className = privateSealedClass className noExtends noImplements allFields allMethods []
   where tag        = Field [FaStatic, FaPublic, FaInitOnly] Cil.Object cafFieldName
         allFields  = [tag]
         allMethods = [cctor, defaultCtorDef]
@@ -1183,7 +1183,7 @@ cafTypeFor caf className = classDef [CaPrivate] className noExtends noImplements
                       , ret ]
 
 recordType :: [MethodDef] -> [Int] -> TypeDef
-recordType methods constTags = classDef [CaPrivate] className noExtends noImplements allFields allMethods []
+recordType methods constTags = classDef [CaPrivate, CaBeforeFieldInit] className noExtends noImplements allFields allMethods []
   where className  = recordTypeName
         allFields  = tag : constFields
         tag        = Field [FaPublic, FaInitOnly] Int32 "tag"
@@ -1224,7 +1224,7 @@ recordTypeName :: String
 recordTypeName = "Record"
 
 recordTypeFor :: Int -> TypeDef
-recordTypeFor arity = classDef [CaPrivate] className baseType noImplements allFields allMethods []
+recordTypeFor arity = privateSealedClass className baseType noImplements allFields allMethods []
   where className  = recordTypeNameFor arity
         baseType   = Just (TypeSpec recordTypeName)
         fieldNames = recordFieldNamesFor arity
@@ -1248,6 +1248,12 @@ recordFieldNamesFor arity = ("f" ++) . show <$> [1..arity]
 
 recordTypeNameFor :: Int -> TypeName
 recordTypeNameFor = (recordTypeName ++) . show
+
+privateSealedClass :: TypeName -> Maybe TypeSpec -> [TypeSpec] -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
+privateSealedClass = classDef [CaPrivate, CaSealed, CaBeforeFieldInit]
+
+publicSealedClass :: TypeName -> Maybe TypeSpec -> [TypeSpec] -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
+publicSealedClass = classDef [CaPublic, CaSealed, CaBeforeFieldInit]
 
 publicStruct :: TypeName -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
 publicStruct name = classDef [CaPublic] name (extends "[mscorlib]System.ValueType") noImplements
