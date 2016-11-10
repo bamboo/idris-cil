@@ -669,7 +669,7 @@ emitOp LStrRev [s] = do
   loadString s
   tell [ callvirt charArray "mscorlib" "System.String" "ToCharArray" []
        , dup
-       , call [] Void "mscorlib" "System.Array" "Reverse" [ReferenceType "mscorlib" "System.Array"]
+       , call [] Void "mscorlib" "System.Array" "Reverse" [systemArray]
        , newobj "mscorlib" "System.String" [charArray] ]
 
 emitOp LStrLen [s] = do
@@ -776,44 +776,142 @@ emitOp (LPlus ATFloat)        args = emitFloatOp add args
 emitOp (LMinus ATFloat)       args = emitFloatOp sub args
 emitOp LFloatStr              [f]  = emitPrimitiveToString f
 emitOp LStrFloat              [s]  = emitTryParse Double64 s
+emitOp (LExternal name)       args = emitExternalOp name args
+emitOp o _ = unsupportedOp o
 
-emitOp (LExternal name) []
+emitExternalOp :: Name -> [LVar] -> CilEmitter()
+emitExternalOp name []
   | name == sUN "prim__null" = tell [ ldnull ]
-
-emitOp (LExternal name) [x, y]
+emitExternalOp name [x, y]
   | name == sUN "prim__eqPtr" = load x >> load y >> tell [ ceq, boxInt32 ]
+emitExternalOp (sn -> customExternalName) args = emitCustomExternalOp customExternalName args
 
-emitOp (LExternal (sn -> "prim__singleFromDouble")) [x]  = emitPrimitiveCast Double64 Float32 conv_r4 x
-emitOp (LExternal (sn -> "prim__singleFromInteger")) [x] = emitPrimitiveCast Int32 Float32 conv_r4 x
-emitOp (LExternal (sn -> "prim__singleFromInt")) [x]     = emitPrimitiveCast Int32 Float32 conv_r4 x
-
-emitOp (LExternal (sn -> "prim__singleAdd")) args = emitSingleOp add args
-emitOp (LExternal (sn -> "prim__singleSub")) args = emitSingleOp sub args
-emitOp (LExternal (sn -> "prim__singleMul")) args = emitSingleOp mul args
-emitOp (LExternal (sn -> "prim__singleDiv")) args = emitSingleOp Cil.div args
-
-emitOp (LExternal (sn -> "prim__singleCompare")) [x, y] = do
+emitCustomExternalOp :: String -> [LVar] -> CilEmitter ()
+emitCustomExternalOp "prim__singleFromDouble" [x]  = emitPrimitiveCast Double64 Float32 conv_r4 x
+emitCustomExternalOp "prim__singleFromInteger" [x] = emitPrimitiveCast Int32 Float32 conv_r4 x
+emitCustomExternalOp "prim__singleFromInt" [x]     = emitPrimitiveCast Int32 Float32 conv_r4 x
+emitCustomExternalOp "prim__singleAdd" args = emitSingleOp add args
+emitCustomExternalOp "prim__singleSub" args = emitSingleOp sub args
+emitCustomExternalOp "prim__singleMul" args = emitSingleOp mul args
+emitCustomExternalOp "prim__singleDiv" args = emitSingleOp Cil.div args
+emitCustomExternalOp "prim__singleCompare" [x, y] = do
   x' <- storeTemp Float32 x
   tell [ ldlocaN x' ]
   loadAs Float32 y
   tell [ call [CcInstance] Int32 "" "float32" "CompareTo" [Float32]
        , boxInt32 ]
 
-emitOp (LExternal (sn -> "prim__singleMax")) [x, y] = emitSingleMathOp "Max" x y
-emitOp (LExternal (sn -> "prim__singleMin")) [x, y] = emitSingleMathOp "Min" x y
-emitOp (LExternal (sn -> "prim__singleNeg")) [x] = do
+emitCustomExternalOp "prim__singleMax" [x, y] = emitSingleMathOp "Max" x y
+emitCustomExternalOp "prim__singleMin" [x, y] = emitSingleMathOp "Min" x y
+emitCustomExternalOp "prim__singleNeg" [x] = do
   loadAs Float32 x
   tell [ neg
        , boxFloat32 ]
 
-emitOp (LExternal (sn -> "prim__singleAbs")) [x] = do
+emitCustomExternalOp "prim__singleAbs" [x] = do
   loadAs Float32 x
   tell [ call [] Float32 "mscorlib" "System.Math" "Abs" [Float32]
        , boxFloat32 ]
 
-emitOp (LExternal (sn -> "prim__singleShow")) [x] = emitPrimitiveToString x
+emitCustomExternalOp "prim__singleShow" [x] = emitPrimitiveToString x
 
-emitOp o _ = unsupportedOp o
+emitCustomExternalOp "prim__Vector_empty" [] =
+  tell [ callMethod (GenericMethodInstance [] systemArray "Empty" [Cil.Object] [] (Array (GenericMethodTypeParameter 0))) ]
+
+emitCustomExternalOp "prim__Vector_null" [v] = do
+  loadAs array v
+  tell [ ldlen
+       , ldc_i4 0
+       , ceq
+       , boxBoolean ]
+
+emitCustomExternalOp "prim__Vector_replaceAt" [n, x, v] = do
+  loadAs array v
+  tell [ callvirt Cil.Object "mscorlib" "System.Array" "Clone" []
+       , castclass array
+       , dup ]
+  loadAs Int32 n
+  load x
+  tell [ stelem_ref ]
+
+emitCustomExternalOp "prim__Vector_insertAt" [n, x, v] = do
+  tempN <- storeTemp Int32 n
+  let ldn = ldlocN tempN
+  tempV <- storeTemp array v
+  let ldv = ldlocN tempV
+  result <- gensym "v"
+  let ldr = ldlocN result
+  tell [ localsInit [ Local array tempV
+                    , Local array result ]
+       , ldv
+       , ldlen
+       , conv_i4
+       , ldc_i4 1
+       , add
+       , newarr Cil.Object
+       , stlocN result
+       , ldr
+       , ldn ]
+  load x
+  tell [ stelem_ref
+       , ldv
+       , ldc_i4 0
+       , ldr
+       , ldc_i4 0
+       , ldn
+       , call [] Cil.Void "mscorlib" "System.Array" "Copy" [systemArray, Int32, systemArray, Int32, Int32]
+       , ldv
+       , ldn
+       , ldr
+       , ldn
+       , ldc_i4 1
+       , add
+       , ldv
+       , ldlen
+       , conv_i4
+       , ldn
+       , sub
+       , call [] Cil.Void "mscorlib" "System.Array" "Copy" [systemArray, Int32, systemArray, Int32, Int32]
+       , ldr ]
+
+emitCustomExternalOp "prim__Vector_replicate" [n, x] = do
+  ldn <- storeTemp Int32 n
+  ldx <- loadInstructionFor x
+  v <- gensym "v"
+  i <- gensym "i"
+  loop <- gensym "LOOP"
+  test <- gensym "TEST"
+  tell [ localsInit [ Local array v
+                    , Local Int32 i ]
+       , ldlocN ldn
+       , newarr Cil.Object
+       , stlocN v
+       , ldc_i4 0
+       , stlocN i
+       , br test
+       , label loop
+       , ldlocN v
+       , ldlocN i
+       , ldx
+       , stelem_ref
+       , ldlocN i
+       , ldc_i4 1
+       , add
+       , stlocN i
+       , label test
+       , ldlocN i
+       , ldlocN ldn
+       , blt loop
+       , ldlocN v ]
+
+emitCustomExternalOp "prim__Vector_length" [v] = loadAs array v >> tell [ ldlen, boxInt32 ]
+
+emitCustomExternalOp "prim__Vector_index" [v, i] = do
+  loadAs array v
+  loadAs Int32 i
+  tell [ ldelem_ref ]
+
+emitCustomExternalOp o _ = unsupported "external" o
 
 emitTryParse :: PrimitiveType -> LVar -> CilEmitter ()
 emitTryParse ty var = do
@@ -912,14 +1010,18 @@ loadString l = load l >> tell [ castclass String ]
 ldc :: (Integral n) => n -> Instruction
 ldc = ldc_i4 . fromIntegral
 
-load :: LVar -> CilEmitter ()
-load (Loc i) = do
-  li <- localIndex i
-  tell [
+loadInstructionFor :: LVar -> CilEmitter Instruction
+loadInstructionFor (Loc i) = do
+    li <- localIndex i
     if li < 0
-      then ldarg i
-      else ldloc li ]
-load v = unsupported "LVar" v
+      then pure $ ldarg i
+      else pure $ ldloc li
+loadInstructionFor v = error $ "Unsupported local variable: " ++ show v
+
+load :: LVar -> CilEmitter ()
+load v = do
+  li <- loadInstructionFor v
+  tell (singleton li)
 
 localIndex :: Offset -> CilEmitter Offset
 localIndex i = do
@@ -1008,8 +1110,9 @@ recordTypeName = "Record"
 publicStruct :: TypeName -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
 publicStruct name = classDef [CaPublic] name (extends "[mscorlib]System.ValueType") noImplements
 
-array, charArray :: PrimitiveType
+array, systemArray, charArray :: PrimitiveType
 array = Array Cil.Object
+systemArray = ReferenceType "mscorlib" "System.Array"
 charArray = Array Char
 
 runtimeType :: PrimitiveType

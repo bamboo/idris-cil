@@ -6,5 +6,6 @@ modules = CIL.FFI
         , CIL.FFI.Single
         , CIL.System.Reflection
         , Data.Nullable
+        , Data.Vector
 
 pkgs = effects
