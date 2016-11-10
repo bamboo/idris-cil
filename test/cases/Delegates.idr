@@ -54,11 +54,15 @@ testBoolToString bts =
 threadMain : CIL_IO ()
 threadMain = putStrLn "in thread"
 
+startThread : CIL_IO () -> CIL_IO Thread
+startThread f = do
+  ts <- delegate ThreadStartTy (CIL_IO ()) f
+  new (ThreadStart -> CIL_IO Thread) ts
+
 main : CIL_IO ()
 main = do
   -- And now for something completely different... Threads!
-  ts <- delegate ThreadStartTy (CIL_IO ()) threadMain
-  t <- new (ThreadStart -> CIL_IO Thread) ts
+  t <- startThread threadMain
   putStrLn "before thread"
   Start t; Join t
   putStrLn "after thread"
