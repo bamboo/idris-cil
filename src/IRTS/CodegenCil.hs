@@ -209,6 +209,7 @@ emit (SV v)        = load v
 emit (SConst c)    = emitConst c
 emit (SOp op args) = emitOp op args
 emit SNothing      = emitThrow "SNothing"
+emit (SError e)    = emitThrow e
 
 -- Special constructors: True, False
 emit (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
@@ -231,7 +232,13 @@ emit (SCon Nothing t _ fs) = do
 
 -- ifThenElse
 emit (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
-                    , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue =
+                     , SConCase _ 1 nTrue  [] thenAlt ]) | nFalse == boolFalse && nTrue == boolTrue =
+  emitIfThenElse v thenAlt elseAlt $
+    \thenLabel -> tell [ unbox_any Bool
+                       , brtrue thenLabel ]
+
+emit (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
+                     , SDefaultCase thenAlt ]) | nFalse == boolFalse =
   emitIfThenElse v thenAlt elseAlt $
     \thenLabel -> tell [ unbox_any Bool
                        , brtrue thenLabel ]
@@ -511,12 +518,15 @@ emitIfThenElse v thenAlt elseAlt emitBranch = do
 emitConst :: Const -> CilEmitter ()
 emitConst (Str s) = tell [ ldstr s ]
 emitConst (I i)   = emitConst . BI . fromIntegral $ i
+emitConst (B32 i) = emitConst . BI . fromIntegral $ i
+emitConst (B16 i) = emitConst . BI . fromIntegral $ i
+emitConst (B8 i) = emitConst . BI . fromIntegral $ i
 emitConst (BI i)  = tell [ ldc i
-                       , boxInt32 ]
+                         , boxInt32 ]
 emitConst (Ch c)  = tell [ ldc $ ord c
-                       , boxChar ]
+                         , boxChar ]
 emitConst (Fl d)  = tell [ ldc_r8 d
-                       , boxDouble64 ]
+                         , boxDouble64 ]
 emitConst c = unsupported "const" c
 {-
   = I Int
@@ -656,6 +666,29 @@ emitSConCase v (SConCase offset _ _ fs sexp) = do
 emitSConCase _ c = unsupported "SConCase" c
 
 emitOp :: PrimFn -> [LVar] -> CilEmitter ()
+emitOp (LLSHR (ITFixed IT32)) args = emitInt32Op shr args
+emitOp (LLSHR (ITFixed IT16)) [x, y] = do
+  loadAs Int32 x
+  tell [ conv_u2 ]
+  loadAs Int32 y
+  tell [ ldc_i4 0x1f
+       , Cil.and
+       , shr
+       , boxInt32 ]
+
+emitOp (LLSHR (ITFixed IT8)) [x, y] = do
+  loadAs Int32 x
+  tell [ conv_u1 ]
+  loadAs Int32 y
+  tell [ ldc_i4 0x1f
+       , Cil.and
+       , shr
+       , boxInt32 ]
+
+emitOp (LAnd (ITFixed IT32)) args = emitInt32Op Cil.and args
+emitOp (LAnd (ITFixed IT8)) args = emitInt32Op Cil.and args
+emitOp (LTrunc (ITFixed IT32) (ITFixed IT16)) [x] = load x
+emitOp (LTrunc (ITFixed IT16) (ITFixed IT8)) [x] = load x
 emitOp LWriteStr [_, s] = do
   load s
   tell [ castclass String
@@ -761,15 +794,23 @@ emitOp (LChInt ITNative) [c] = do
 
 emitOp (LSExt ITNative ITBig) [i]  = load i
 emitOp (LZExt ITNative ITBig) [i]  = load i
+emitOp (LZExt ITNative (ITFixed IT32)) [i] = load i
+emitOp (LZExt (ITFixed IT32) ITNative) [i] = load i
+emitOp (LZExt (ITFixed IT16) ITNative) [i] = load i
+emitOp (LZExt (ITFixed IT8) ITNative) [i]  = load i
+emitOp (LPlus (ATInt ITChar)) args = emitPrimitiveOp Char Char add args
 emitOp (LPlus (ATInt _))      args = emitInt32Op add args
+emitOp (LMinus (ATInt ITChar))args = emitPrimitiveOp Char Char sub args
 emitOp (LMinus (ATInt _))     args = emitInt32Op sub args
 emitOp (LTimes (ATInt _))     args = emitInt32Op mul args
+emitOp (LSRem (ATInt _))      args = emitInt32Op Cil.rem args
 emitOp (LEq (ATInt ITChar))   args = emitPrimitiveOp Char Int32 ceq args
 emitOp (LEq (ATInt _))        args = emitInt32Op ceq args
 emitOp (LSLt (ATInt ITChar))  args = emitPrimitiveOp Char Int32 clt args
 emitOp (LSLt (ATInt _))       args = emitInt32Op clt args
 emitOp (LIntStr _)            [i]  = emitPrimitiveToString i
 emitOp (LIntFloat _)          [i]  = emitPrimitiveCast Int32 Double64 conv_r8 i
+emitOp (LIntCh _)             [i]  = emitPrimitiveCast Int32 Char conv_i2 i
 emitOp (LTimes ATFloat)       args = emitFloatOp mul args
 emitOp (LSDiv ATFloat)        args = emitFloatOp Cil.div args
 emitOp (LPlus ATFloat)        args = emitFloatOp add args

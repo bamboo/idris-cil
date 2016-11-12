@@ -65,7 +65,7 @@ netStackChange _  Ckfinite     =  0
 netStackChange _  Clt          = -1
 -- clt.un?
 -- constrained?
-{-netStackChange _  Conv_i       =  0
+{-netStackChange _  Conv_i       =  0 -}
 netStackChange _  Conv_i1      =  0
 netStackChange _  Conv_i2      =  0
 netStackChange _  Conv_i4      =  0
@@ -73,7 +73,7 @@ netStackChange _  Conv_i8      =  0
 netStackChange _  Conv_u1      =  0
 netStackChange _  Conv_u2      =  0
 netStackChange _  Conv_u4      =  0
-netStackChange _  Conv_u8      =  0-}
+netStackChange _  Conv_u8      =  0
 netStackChange _  Conv_r4      =  0
 netStackChange _  Conv_r8      =  0
 netStackChange _  Dup          =  1
