@@ -160,6 +160,7 @@ netStackChange _ (Newarr _)    =  1
 netStackChange _  Nop          =  0
 netStackChange _  Not          =  0
 netStackChange _  Or           = -1
+netStackChange _  Xor          = -1
 netStackChange _  Pop          = -1
 -- NOTE: refanytype?
 netStackChange _  Rem          = -1

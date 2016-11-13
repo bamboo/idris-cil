@@ -666,7 +666,8 @@ emitSConCase v (SConCase offset _ _ fs sexp) = do
 emitSConCase _ c = unsupported "SConCase" c
 
 emitOp :: PrimFn -> [LVar] -> CilEmitter ()
-emitOp (LLSHR (ITFixed IT32)) args = emitInt32Op shr args
+emitOp (LSHL (ITFixed IT32)) args = emitInt32Op shl args
+emitOp (LLSHR (ITFixed IT32)) args = emitInt32Op shr_un args
 emitOp (LLSHR (ITFixed IT16)) [x, y] = do
   loadAs Int32 x
   tell [ conv_u2 ]
@@ -685,6 +686,8 @@ emitOp (LLSHR (ITFixed IT8)) [x, y] = do
        , shr
        , boxInt32 ]
 
+emitOp (LXOr (ITFixed IT32)) args = emitInt32Op Cil.xor args
+emitOp (LOr (ITFixed IT32)) args = emitInt32Op Cil.or args
 emitOp (LAnd (ITFixed IT32)) args = emitInt32Op Cil.and args
 emitOp (LAnd (ITFixed IT8)) args = emitInt32Op Cil.and args
 emitOp (LTrunc (ITFixed IT32) (ITFixed IT16)) [x] = load x
