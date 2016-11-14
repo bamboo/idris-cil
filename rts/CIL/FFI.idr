@@ -1,5 +1,7 @@
 module CIL.FFI
 
+import public Data.Nullable
+
 %default total
 
 %access public export
@@ -94,9 +96,6 @@ data CILForeign =
   CILExport String |
   ||| Export a function under its original name.
   CILDefault
-
-||| A foreign reference that is allowed to have a null value.
-export data Nullable : Type -> Type
 
 mutual
   data CIL_IntTypes  : Type -> Type where
@@ -256,25 +255,6 @@ namespace System.Convert
     invoke (CILStatic (corlibTy "System.Convert") "ToInt32")
            (Object -> CIL_IO Int)
            (asObject o)
-
-%inline
-null : Nullable a
-null = believe_me prim__null
-
-%inline
-nullable : (Lazy b) -> Lazy (a -> b) -> Nullable a -> b
-nullable d f n =
-  if (the Ptr (believe_me n)) == null
-    then d
-    else f (believe_me n)
-
-%inline
-asNullable : IsA Object a => a -> Nullable a
-asNullable a = believe_me a
-
-%inline
-notNull : Nullable a -> Maybe a
-notNull = nullable Nothing Just
 
 putStr : String -> CIL_IO ()
 putStr = putStr'
