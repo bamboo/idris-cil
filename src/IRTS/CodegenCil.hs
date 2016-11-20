@@ -12,9 +12,10 @@ import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
 import           Data.DList (DList, empty, singleton, fromList, toList)
 import           Data.Function (on)
+import qualified Data.IntSet as IntSet
 import           Data.List (partition, sortBy)
 import qualified Data.Map.Strict as M
-import qualified Data.IntSet as IntSet
+import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 
@@ -26,7 +27,7 @@ import           IRTS.Lang
 import           IRTS.Simplified
 import           Idris.AbsSyntax (Idris, IState(idris_patdefs), getIState, IRFormat(IBCFormat), Codegen(Via))
 import           Idris.Core.CaseTree (CaseType(Shared))
-import           Idris.Core.TT
+import           Idris.Core.TT hiding (Impossible)
 import           Idris.ElabDecls (elabPrims, elabMain)
 import           Idris.Main (loadInputs)
 
@@ -38,9 +39,8 @@ import           System.Process (readProcess)
 
 import           GHC.Float
 
-
--- |A CIL instruction.
-type Instruction = MethodDecl
+import           IRTS.Cil.Types
+import           IRTS.Cil.OptimizeLocals
 
 type CilCodegenInfo = (CodegenInfo, IState)
 
@@ -122,9 +122,7 @@ method decl@(SFun name ps _ sexp) = do
                        , [pop, ret] ]
              else
                mconcat [ [comment (show decl)]
-                       , locals lc
-                       , cilForSexp
-                       , [ret] ]
+                       , optimizeLocals lc (toList (cilForSexp <> singleton ret)) ]
   put cilCodegenState'
   return $ Method attrs retType (cilName name) parameters (withMaxStack (toList body))
   where attrs      = [MaStatic, MaAssembly]
@@ -519,15 +517,6 @@ castOrUnbox t =
        then unbox_any t
        else castclass t
     ]
-
-isValueType :: PrimitiveType -> Bool
-isValueType (ValueType _ _) = True
-isValueType Double64 = True
-isValueType Float32 = True
-isValueType Int32   = True
-isValueType Bool    = True
-isValueType Char    = True
-isValueType _       = False
 
 loadRecordTag :: CilEmitter ()
 loadRecordTag = tell [ castclass recordTypeRef

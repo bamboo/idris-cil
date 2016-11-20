@@ -21,10 +21,13 @@ library
   ghc-options:      -funbox-strict-fields
   hs-source-dirs:   src
   exposed-modules:  IRTS.CodegenCil
-                  , IRTS.Cil.UnreachableCodeRemoval
+  other-modules:    IRTS.Cil.UnreachableCodeRemoval
                   , IRTS.Cil.FFI
                   , IRTS.Cil.VersionParser
                   , IRTS.Cil.MaxStack
+                  , IRTS.Cil.OptimizeLocals
+                  , IRTS.Cil.Types
+
   build-depends:    base >= 4.7 && <5
                   , containers
                   , unordered-containers
