@@ -17,14 +17,14 @@ main : IO ()
 main = putStrLn "Hello, Idris!"
 ```
 
-Compile it to cil and execute it with mono:
+Compile it to cil and execute it with [.NET Core](https://www.microsoft.com/net/core):
 
 ```
 idris --codegen cil Main.idr -o HelloWorld.exe \
-  && mono HelloWorld.exe
+  && dotnet HelloWorld.exe
 ```
 
-The resulting assemblies can also be used with .NET or Unity.
+The resulting assemblies can also be used with Mono or Unity.
 
 ## Installing
 
