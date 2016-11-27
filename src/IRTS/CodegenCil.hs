@@ -10,7 +10,7 @@ import           Control.Monad.State.Strict
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
-import           Data.DList (DList, empty, singleton, fromList, toList)
+import           Data.DList (DList, empty, singleton, fromList, toList, snoc)
 import           Data.Function (on)
 import qualified Data.IntSet as IntSet
 import           Data.List (partition, sortBy)
@@ -100,7 +100,9 @@ typesFor cci@(ci, _) =
       recordType' = recordType (M.elems delegateTypes) (IntSet.toList constTags)
       (exportedTypes', cafs') = runState (exportedTypes cci) cafs
       recordTypes = recordTypeFor <$> IntSet.toList recordArities
-      types = mainModule : recordType' : nothingType : exportedTypes' ++ cafTypesFor (M.assocs cafs') ++ recordTypes
+      types = mainModule : recordType' : nothingType : boxedBoolType : exportedTypes'
+              ++ cafTypesFor (M.assocs cafs')
+              ++ recordTypes
   in (types, Set.toList assemblyRefs)
 
 cafTypesFor :: [(Name, TypeName)] -> [TypeDef]
@@ -124,17 +126,18 @@ method :: SDecl -> CilCodegen MethodDef
 method decl@(SFun name ps _ sexp) = do
   cilCodegenState <- get
   let (CilEmitterState _ lc cilCodegenState', cilForSexp) = cilFor cilCodegenState decl sexp
-      body = if isEntryPoint
-             then
-               mconcat [ [entryPoint]
-                       , locals lc
-                       , fromList (removeLastTailCall $ toList cilForSexp)
-                       , [pop, ret] ]
-             else
-               mconcat [ [comment (show decl)]
-                       , optimizeLocals lc (toList (cilForSexp <> singleton ret)) ]
+      body = optimizeBooleanBoxing . toList $
+        if isEntryPoint
+           then
+             mconcat [ [entryPoint]
+                     , locals lc
+                     , fromList . removeLastTailCall . toList $ cilForSexp
+                     , [pop, ret] ]
+           else
+             mconcat [ [comment (show decl)]
+                     , optimizeLocals lc (toList (cilForSexp <> singleton ret)) ]
   put cilCodegenState'
-  return $ Method attrs retType (cilName name) parameters (withMaxStack (toList body))
+  return $ Method attrs retType (cilName name) parameters (withMaxStack body)
   where attrs      = [MaStatic, MaAssembly]
         retType    = if isEntryPoint then Cil.Void else Cil.Object
         parameters = param <$> ps
@@ -1247,6 +1250,45 @@ recordFieldNamesFor arity = ("f" ++) . show <$> [1..arity]
 
 recordTypeNameFor :: Int -> TypeName
 recordTypeNameFor = (recordTypeName ++) . show
+
+boxedBoolTypeName = "BoxedBool"
+
+boxedBoolType :: TypeDef
+boxedBoolType = privateSealedClass className noExtends noImplements allFields allMethods []
+  where className  = boxedBoolTypeName
+        allFields  = constFields
+        constFields = Field [FaStatic, FaPublic, FaInitOnly] Cil.Object <$> ["False", "True"]
+        allMethods = [defaultCtorDef, cctor, for]
+        cctor      = Constructor [MaStatic] Void []
+                       [ ldc_i4 0
+                       , boxBoolean
+                       , stsfld Cil.Object "" className "False"
+                       , ldc_i4 1
+                       , boxBoolean
+                       , stsfld Cil.Object "" className "True"
+                       , ret ]
+        for        = Method [MaStatic] Cil.Object "For" [Param Nothing Bool "b"]
+                       [ ldarg 0
+                       , brtrue "TRUE"
+                       , ldBoxedFalse
+                       , ret
+                       , label "TRUE"
+                       , ldBoxedTrue
+                       , ret ]
+
+ldBoxedFalse, ldBoxedTrue :: Instruction
+ldBoxedFalse = ldsfld Cil.Object "" boxedBoolTypeName "False"
+ldBoxedTrue  = ldsfld Cil.Object "" boxedBoolTypeName "True"
+
+optimizeBooleanBoxing :: [Instruction] -> [Instruction]
+optimizeBooleanBoxing = go empty
+  where
+    go acc (OpCode Ldc_i4_0 : OpCode (Box Bool) : xs) = go (snoc acc ldBoxedFalse) xs
+    go acc (OpCode Ldc_i4_1 : OpCode (Box Bool) : xs) = go (snoc acc ldBoxedTrue) xs
+    go acc (OpCode (Box Bool) : xs) = go (snoc acc boxedBoolFor) xs
+    go acc (x : xs) = go (snoc acc x) xs
+    go acc []       = toList acc
+    boxedBoolFor = call [] Cil.Object "" boxedBoolTypeName "For" [Bool]
 
 privateSealedClass :: TypeName -> Maybe TypeSpec -> [TypeSpec] -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
 privateSealedClass = classDef [CaPrivate, CaSealed, CaBeforeFieldInit]
