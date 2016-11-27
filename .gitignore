@@ -5,3 +5,4 @@ TAGS
 *.ibc
 *.il
 *~
+/test/cases/*.runtimeconfig.json

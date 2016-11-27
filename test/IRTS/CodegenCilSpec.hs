@@ -72,7 +72,7 @@ compileCodegenInfo input output = do
 mono :: String -> IO String
 mono exe = if os == "mingw32"
              then readProcess exe [] ""
-             else readProcess "mono" [exe] ""
+             else readProcess "dotnet" [exe] ""
 
 peverify :: String -> IO ()
 peverify exe = traceProcess "peverify" [exe]

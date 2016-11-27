@@ -9,9 +9,6 @@ False
 
 import CIL.FFI
 
-systemCoreTy : String -> CILTy
-systemCoreTy = CILTyRef "System.Core"
-
 TupleTy : CILTy
 TupleTy = corlibTy "System.Tuple"
 
@@ -31,8 +28,11 @@ CreateIntTuple =
          (Int -> Int -> CIL_IO IntTuple)
 
 
+systemCollectionsTy : String -> CILTy
+systemCollectionsTy = CILTyRef "System.Collections"
+
 HashSetTy : CILTy
-HashSetTy = systemCoreTy "System.Collections.Generic.HashSet"
+HashSetTy = systemCollectionsTy "System.Collections.Generic.HashSet"
 
 IntTupleHashSet : Type
 IntTupleHashSet = CIL (CILTyGen HashSetTy [IntTupleTy])
@@ -52,7 +52,7 @@ Contains =
 
 AssemblyReferences : CIL_IO ()
 AssemblyReferences =
-  assemblyRef "System.Core" "4.0.0.0" "B7 7A 5C 56 19 34 E0 89"
+  assemblyRef "System.Collections" "4.0.10.0" "B0 3F 5F 7F 11 D5 0A 3A"
 
 main : CIL_IO ()
 main = do

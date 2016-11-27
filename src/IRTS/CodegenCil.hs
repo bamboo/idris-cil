@@ -68,13 +68,23 @@ compileCilCodegenInfo inputs output = do
 codegenCil :: CilCodegenInfo -> IO ()
 codegenCil cci@(ci, istate) =
   do writeFileUTF8 cilFile cilText
-     when (outputExtension /= ".il") $
+     when (outputExtension /= ".il") $ do
        ilasm cilFile output
+       writeFileUTF8 dotnetRuntimeConfigFile dotnetRuntimeConfig
   where cilFile = replaceExtension output "il"
         cilText = pr (assemblyFor cci) ""
         output  = outputFile ci
         outputExtension = takeExtension output
         writeFileUTF8 f s = BS.writeFile f $ UTF8.fromString s
+        dotnetRuntimeConfigFile = replaceExtension output ".runtimeconfig.json"
+        dotnetRuntimeConfig = "{\n\
+                              \  \"runtimeOptions\": {\n\
+                              \    \"framework\": {\n\
+                              \      \"name\": \"Microsoft.NETCore.App\",\n\
+                              \      \"version\": \"1.1.0\"\n\
+                              \    }\n\
+                              \  }\n\
+                              \}"
 
 ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" <> output] "" >>= putStr
