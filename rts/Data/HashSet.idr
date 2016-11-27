@@ -78,12 +78,6 @@ infixl 7 <<
 shiftMask : Bits32 -> Bits32 -> Bits32 -> Bits32
 shiftMask bits shift mask = (bits >> shift) & mask
 
-next5Bits : Bits32 -> HashCode -> HashCode
-next5Bits level hashCode = shiftMask hashCode (5 * level) 0x1F
-
-bitAt : Bits32 -> Bits32 -> Bool
-bitAt pos bits = 1 == shiftMask bits pos 1
-
 popcnt : Bits32 -> Bits32
 popcnt x =
   let x = x - shiftMask x 1 0x55555555
@@ -92,6 +86,12 @@ popcnt x =
       x = x + (x >> 8)
       x = x + (x >> 16)
   in x & 0x0000003F
+
+next5Bits : Bits32 -> HashCode -> HashCode
+next5Bits level hashCode = shiftMask hashCode (5 * level) 0x1F
+
+bitAt : Bits32 -> Bits32 -> Bool
+bitAt pos bits = 1 == shiftMask bits pos 1
 
 setBit : Bits32 -> Bits32 -> Bits32
 setBit bitPos bits = prim__orB32 bits (1 << bitPos)
