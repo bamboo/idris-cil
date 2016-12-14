@@ -58,10 +58,12 @@ inferredTypesFor is = ensureCompatibleAssignmentsOf inferredTypes
     ensureCompatibleAssignmentsOf types = foldl ensureCompatibleAssignment types instructionPairs
 
     ensureCompatibleAssignment :: InferredTypes -> (Instruction, Instruction) -> InferredTypes
-    ensureCompatibleAssignment types (OpCode (Box t), OpCode (Stloc index)) = unify types (index, t)
+    -- assume copying from locals or arguments doesn't imply incompatibility
     ensureCompatibleAssignment types (OpCode Ldarg{}, OpCode (Stloc index)) = types
     ensureCompatibleAssignment types (OpCode Ldloc{}, OpCode (Stloc index)) = types
-    ensureCompatibleAssignment types (OpCode Ldfld{}, OpCode (Stloc index)) = types
+    -- but copying from any other source might
+    ensureCompatibleAssignment types (OpCode (Box t), OpCode (Stloc index)) = unify types (index, t)
+    ensureCompatibleAssignment types (OpCode (Ldfld t _ _ _), OpCode (Stloc index)) = unify types (index, t)
     ensureCompatibleAssignment types (_, OpCode (Stloc index)) = M.insert index Impossible types
     ensureCompatibleAssignment types _ = types
 
