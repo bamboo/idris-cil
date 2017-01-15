@@ -836,6 +836,7 @@ emitOp (LZExt ITNative (ITFixed IT32)) [i] = load i
 emitOp (LZExt (ITFixed IT32) ITNative) [i] = load i
 emitOp (LZExt (ITFixed IT16) ITNative) [i] = load i
 emitOp (LZExt (ITFixed IT8) ITNative) [i]  = load i
+emitOp (LTrunc ITBig ITNative) [i] = load i
 emitOp (LPlus (ATInt ITChar)) args = emitPrimitiveOp Char Char add args
 emitOp (LPlus (ATInt _))      args = emitInt32Op add args
 emitOp (LMinus (ATInt ITChar))args = emitPrimitiveOp Char Char sub args
