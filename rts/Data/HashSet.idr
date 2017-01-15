@@ -1,6 +1,5 @@
 module Data.HashSet
 
-import Data.Nullable
 import Data.Vector
 
 %default total
@@ -152,7 +151,7 @@ insert' hashCode key set@(MkHashSet size root) =
    case nodeAt rootPos root of
      Empty => insertRootNode (Key hashCode key)
      SubTrie bitmap nodes =>
-       nullable set insertRootNode (insertIntoSubTrie bitmap nodes 1)
+       maybe set insertRootNode (insertIntoSubTrie bitmap nodes 1)
      node@(Key existingHashCode existingKey) =>
        if existingHashCode == hashCode
          then
@@ -160,7 +159,7 @@ insert' hashCode key set@(MkHashSet size root) =
              then set
              else insertRootNode (collision existingKey)
          else
-           nullable set insertRootNode (spawnSubTrie node existingHashCode 1)
+           maybe set insertRootNode (spawnSubTrie node existingHashCode 1)
      node@(HashCollision existingHashCode keys) =>
        if existingHashCode == hashCode
          then
@@ -168,7 +167,7 @@ insert' hashCode key set@(MkHashSet size root) =
              then set
              else insertRootNode (HashCollision hashCode (key :: keys))
          else
-           nullable set insertRootNode (spawnSubTrie node existingHashCode 1)
+           maybe set insertRootNode (spawnSubTrie node existingHashCode 1)
   where
     rootPos : Index
     rootPos = cast (next5Bits 0 hashCode)
@@ -177,7 +176,7 @@ insert' hashCode key set@(MkHashSet size root) =
     collision : a -> Node a
     collision existingKey = HashCollision hashCode (key :: singleton existingKey)
     mutual
-      insertIntoSubTrie : Bitmap -> NodeList a -> Bits32 -> Nullable (Node a)
+      insertIntoSubTrie : Bitmap -> NodeList a -> Bits32 -> Maybe (Node a)
       insertIntoSubTrie bitmap nodes level =
         let
           bitPos = next5Bits level hashCode
@@ -186,30 +185,30 @@ insert' hashCode key set@(MkHashSet size root) =
         in
           if bitVal
             then SubTrie bitmap . replaceNode nodePos nodes <$> insertInto (nodeAt nodePos nodes) level
-            else asNullable (SubTrie (setBit bitPos bitmap) (insertNode nodePos nodes (Key hashCode key)))
+            else Just (SubTrie (setBit bitPos bitmap) (insertNode nodePos nodes (Key hashCode key)))
 
-      insertInto : Node a -> Bits32 -> Nullable (Node a)
+      insertInto : Node a -> Bits32 -> Maybe (Node a)
       insertInto (SubTrie bitmap nodes) level =
         assert_total (insertIntoSubTrie bitmap nodes (level + 1))
       insertInto node@(Key existingHashCode existingKey) level =
         if existingHashCode == hashCode
           then
             if existingKey == key
-              then null
-              else asNullable (collision existingKey)
+              then Nothing
+              else Just (collision existingKey)
           else
             assert_total (spawnSubTrie node existingHashCode (level + 1))
       insertInto node@(HashCollision existingHashCode keys) level =
         if existingHashCode == hashCode
           then
             if elem key keys
-              then null
-              else asNullable (HashCollision hashCode (key :: keys))
+              then Nothing
+              else Just (HashCollision hashCode (key :: keys))
           else
             assert_total (spawnSubTrie node existingHashCode (level + 1))
       insertInto Empty _ = assert_unreachable
 
-      spawnSubTrie : Node a -> HashCode -> Bits32 -> Nullable (Node a)
+      spawnSubTrie : Node a -> HashCode -> Bits32 -> Maybe (Node a)
       spawnSubTrie node existingHashCode level =
         let bitPos = next5Bits level existingHashCode
             bitmap = setBit bitPos 0

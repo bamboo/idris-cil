@@ -56,10 +56,10 @@ namespace RuntimeType
   get_Name : RuntimeType -> CIL_IO String
   get_Name = invoke (CILInstance "get_Name") (RuntimeType -> CIL_IO String)
 
-  GetMethod : RuntimeType -> String -> CIL_IO (Nullable MethodInfo)
+  GetMethod : RuntimeType -> String -> CIL_IO (Maybe MethodInfo)
   GetMethod =
     invoke (CILInstance "GetMethod")
-           (RuntimeType -> String -> CIL_IO (Nullable MethodInfo))
+           (RuntimeType -> String -> CIL_IO (Maybe MethodInfo))
 
 namespace MethodInfo
 
@@ -72,10 +72,10 @@ namespace MethodInfo
   get_ReturnType : MethodInfo -> CIL_IO RuntimeType
   get_ReturnType = invoke (CILInstance "get_ReturnType") (MethodInfo -> CIL_IO RuntimeType)
 
-  Invoke : MethodInfo -> Nullable Object -> Nullable ObjectArray -> CIL_IO Object
+  Invoke : MethodInfo -> Maybe Object -> Maybe ObjectArray -> CIL_IO Object
   Invoke =
     invoke (CILInstance "Invoke")
-            (MethodInfo -> Nullable Object -> Nullable ObjectArray -> CIL_IO Object)
+            (MethodInfo -> Maybe Object -> Maybe ObjectArray -> CIL_IO Object)
 
 namespace ParameterInfo
 

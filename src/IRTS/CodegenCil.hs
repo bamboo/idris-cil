@@ -260,6 +260,10 @@ emit (SError e)    = emitThrow e
 emit (SCon _ 0 n []) | n == boolFalse = tell [ ldc_i4 0, boxBoolean ]
 emit (SCon _ 1 n []) | n == boolTrue  = tell [ ldc_i4 1, boxBoolean ]
 
+-- Special constructors: Nothing, Just a
+emit (SCon _ 0 n [])  | n == maybeNothing = tell [ ldnull ]
+emit (SCon _ 1 n [v]) | n == maybeJust    = load v
+
 -- General constructors
 emit (SCon Nothing t _ fs) =
   if null fs
@@ -283,6 +287,25 @@ emit (SCase Shared v [ SConCase _ 0 nFalse [] elseAlt
     \thenLabel -> tell [ unbox_any Bool
                        , brtrue thenLabel ]
 
+
+-- Prelude.Maybe pattern matching
+emit (SCase Shared v [ SConCase local 1 nJust [_] justAlt
+                     , SConCase _ 0 nNothing [] nothingAlt ])
+  | nJust == maybeJust && nNothing == maybeNothing = emitCaseJust v local justAlt nothingAlt
+
+emit (SCase Shared v [ SConCase local 1 nJust [_] justAlt
+                     , SDefaultCase defaultAlt ])
+  | nJust == maybeJust = emitCaseJust v local justAlt defaultAlt
+
+emit (SCase Shared v [ SConCase _ 0 nNothing [] nothingAlt
+                     , SDefaultCase elseAlt ])
+  | nNothing == maybeNothing = emitIfThenElse v nothingAlt elseAlt (\thenLabel -> tell [ brfalse thenLabel ])
+
+emit c@(SCase Shared v (SConCase _ _ n1 a1 alt1 : _))
+  | n1 == maybeNothing || n1 == maybeJust = unsupported "maybe pattern" c
+
+
+-- arbitrary pattern matching
 emit (SCase Shared v [ SConCase _ tag _ [] thenAlt, SDefaultCase elseAlt ]) =
   emitIfThenElse v thenAlt elseAlt $
     \thenLabel -> do loadRecordTag
@@ -547,6 +570,20 @@ emitIfThenElse v thenAlt elseAlt emitBranch = do
   tell [ br endLabel
        , label thenLabel ]
   emit thenAlt
+  tell [ label endLabel ]
+
+emitCaseJust :: LVar -> Int -> SExp -> SExp -> CilEmitter ()
+emitCaseJust v justValueLocal justAlt nothingAlt = do
+  justLabel <- gensym "JUST"
+  endLabel  <- gensym "END"
+  load v
+  tell [ brtrue justLabel ]
+  emit nothingAlt
+  tell [ br endLabel
+       , label justLabel ]
+  load v
+  localIndex justValueLocal >>= storeLocal
+  emit justAlt
   tell [ label endLabel ]
 
 emitConst :: Const -> CilEmitter ()
@@ -1314,6 +1351,10 @@ runtimeTypeHandle = ValueType "mscorlib" "System.RuntimeTypeHandle"
 boolFalse, boolTrue :: Name
 boolFalse = NS (UN "False") ["Bool", "Prelude"]
 boolTrue  = NS (UN "True")  ["Bool", "Prelude"]
+
+maybeNothing, maybeJust :: Name
+maybeNothing = NS (UN "Nothing") ["Maybe", "Prelude"]
+maybeJust    = NS (UN "Just")  ["Maybe", "Prelude"]
 
 quoted :: String -> String
 quoted name = "'" <> (name >>= validChar) <> "'"

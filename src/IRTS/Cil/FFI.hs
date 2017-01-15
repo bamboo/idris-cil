@@ -101,8 +101,8 @@ foreignType (FApp cilTy [ty])
 foreignType (FApp cilTy [_, ty, _])
   | cilTy == sUN "CIL_FnT" = foreignType ty
 
-foreignType (FApp cilTy [ty])
-  | cilTy == sUN "CIL_NullT" = foreignType ty
+foreignType (FApp cilTy [_, ty])
+  | cilTy == sUN "CIL_MaybeT" = foreignType ty
 
 foreignType (FApp cilTy [ty])
   | cilTy == sUN "CILTyArr" = Array $ foreignType ty

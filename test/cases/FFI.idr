@@ -86,19 +86,19 @@ testValueType = do
   printLn !(Equals guid guid')
   ToString !EmptyGuid >>= putStrLn
 
-invokeStaticMethod : RuntimeType -> String -> Nullable ObjectArray -> CIL_IO (Maybe Object)
+invokeStaticMethod : RuntimeType -> String -> Maybe ObjectArray -> CIL_IO (Maybe Object)
 invokeStaticMethod type methodName args =
-  nullable (pure Nothing) (\method => Just <$> Invoke method null args) !(type `GetMethod` methodName)
+  maybe (pure Nothing) (\method => Just <$> Invoke method Nothing args) !(type `GetMethod` methodName)
 
 testExportedVoidFunction : RuntimeType -> CIL_IO ()
 testExportedVoidFunction type = do
   putStrLn "before exportedVoidIO"
-  invokeStaticMethod type "VoidFunction" null
+  invokeStaticMethod type "VoidFunction" Nothing
   putStrLn "after exportedVoidIO"
 
 testExportedBoolToStringIO : RuntimeType -> CIL_IO ()
 testExportedBoolToStringIO type = do
-  ret <- invokeStaticMethod type "exportedBoolToStringIO" (asNullable !(objectArrayFor [asObject True]))
+  ret <- invokeStaticMethod type "exportedBoolToStringIO" (Just !(objectArrayFor [asObject True]))
   retString <- maybe (pure "ERROR") ToString ret
   putStrLn $ "exportedBoolToStringIO => " ++ retString
 
@@ -175,11 +175,11 @@ showMethod m = do
 printMethod : RuntimeType -> String -> CIL_IO ()
 printMethod t n = do
   m <- t `GetMethod` n
-  nullable (pure "method not found") showMethod m >>= putStrLn
+  maybe (pure "method not found") showMethod m >>= putStrLn
 
 testBoxingUnboxing : RuntimeType -> CIL_IO ()
 testBoxingUnboxing type = do
-  ret <- invokeStaticMethod type "exportedIncInt" (asNullable !(objectArrayFor [asObject 2]))
+  ret <- invokeStaticMethod type "exportedIncInt" (Just !(objectArrayFor [asObject 2]))
   maybe (pure "ERROR") ToString ret >>= putStrLn
 
 main : CIL_IO ()

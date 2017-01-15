@@ -1,7 +1,5 @@
 module CIL.FFI
 
-import public Data.Nullable
-
 %default total
 
 %access public export
@@ -112,7 +110,7 @@ mutual
        CIL_IntT  : CIL_IntTypes i -> CIL_Types i
        CIL_CILT  : CIL_Types (CIL ty)
        CIL_FnT   : CIL_FnTypes fnT -> CIL_Types (CilFn delegateTy fnT)
-       CIL_NullT : CIL_Types (Nullable ty)
+       CIL_MaybeT : CIL_Types ty -> CIL_Types (Maybe ty)
 
   data CilFn   : CILTy -> Type -> Type where
        MkCilFn : (delegateTy : CILTy) -> (fn : fnT) -> CilFn delegateTy fnT
