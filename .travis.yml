@@ -24,7 +24,7 @@ before_install:
   - sudo apt-get update -qq
   - sudo apt-get install -qq dotnet-dev-1.0.0-preview2.1-003177
   # Add ghc to the PATH
-  - export PATH=/opt/ghc/8.0.1/bin:$PATH
+  - export PATH=/opt/ghc/bin:$PATH
   # Download and unpack the stack executable
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
