@@ -32,5 +32,5 @@ before_install:
   - curl -L https://raw.githubusercontent.com/futurice/fum2github/3a270cf7a3b600900c1a8ed07c23d5f3ba8b115d/travis_long > travis_long && chmod +x travis_long
 
 script:
-  - ./travis_long stack +RTS -N2 -RTS --no-terminal --skip-ghc-check install idris
-  - ./travis_long stack +RTS -N2 -RTS --no-terminal --skip-ghc-check test
+  - ./travis_long stack +RTS -N2 -RTS --no-terminal --system-ghc --skip-ghc-check install idris
+  - ./travis_long stack +RTS -N2 -RTS --no-terminal --system-ghc --skip-ghc-check test
