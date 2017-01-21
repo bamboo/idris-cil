@@ -9,7 +9,7 @@ HashCode : Type
 HashCode = Bits32
 
 public export
-interface Hash a where
+interface (Eq a) => Hash a where
   hash : a -> HashCode
 
 public export
@@ -115,7 +115,7 @@ Compute a full 32 bit hash for the key, take the most significant t bits and use
 Take the next 5 bits of the hash and use them as an integer to index into the bit Map. If this bit is a zero the hash table entry is empty indicating failure, otherwise, it’s a one, so count the one bits below it using CTPOP and use the result as the index into the non-empty entry list at Base. This process is repeated taking five more bits of the hash each time until a terminating key/value pair is found or the search fails. Typically, only a few iterations are required and it is important to note that the key is only compared once and that is with the terminating node key.
 -}
 export
-member : (Hash a, Eq a) => a -> HashSet a -> Bool
+member : (Hash a) => a -> HashSet a -> Bool
 member key (MkHashSet _ root) =
   let rootPos = cast (next5Bits 0 hashCode)
   in memberOf root rootPos 1
@@ -146,7 +146,7 @@ Either an empty position is discovered in the hash table or a sub-hash table is 
 
 Or the key will collide with an existing one. In which case the existing key must be replaced with a sub-hash table and the next 5 bit hash of the existing key computed. If there is still a collision then this process is repeated until no collision occurs. The existing key is then inserted in the new sub-hash table and the new key added. Each time 5 more bits of the hash are used the probability of a collision reduces by a factor of 1 . Occasionally an entire 32 bit hash may be consumed and 32 a new one must be computed to differentiate the two keys.
 -}
-insert' : (Hash a, Eq a) => HashCode -> a -> HashSet a -> HashSet a
+insert' : (Hash a) => HashCode -> a -> HashSet a -> HashSet a
 insert' hashCode key set@(MkHashSet size root) =
    case nodeAt rootPos root of
      Empty => insertRootNode (Key hashCode key)
@@ -215,7 +215,7 @@ insert' hashCode key set@(MkHashSet size root) =
         in insertIntoSubTrie bitmap (singleton node) level
 
 export
-insert : (Hash a, Eq a) => a -> HashSet a -> HashSet a
+insert : (Hash a) => a -> HashSet a -> HashSet a
 insert key set = insert' (hash key) key set
 
 export
@@ -259,11 +259,11 @@ filter f (MkHashSet _ nodes) = foldNodes empty nodes
     insertWithHashCode hc acc e = if f e then insert' hc e acc else acc
 
 export
-into : (Eq a, Hash a, Foldable f) => HashSet a -> f a -> HashSet a
+into : (Hash a, Foldable f) => HashSet a -> f a -> HashSet a
 into = foldl (flip insert)
 
 export
-fromList : (Eq a, Hash a) => List a -> HashSet a
+fromList : (Hash a) => List a -> HashSet a
 fromList = foldl (flip insert) empty
 
 export
