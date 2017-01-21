@@ -241,7 +241,7 @@ fold f init (MkHashSet _ nodes) = foldNodes init nodes
 export
 Foldable HashSet where
   foldl = fold
-  foldr f = fold (flip f)
+  foldr = fold . flip
 
 export
 filter : (Eq elem, Hash elem) => (elem -> Bool) -> HashSet elem -> HashSet elem
