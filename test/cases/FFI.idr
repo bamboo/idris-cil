@@ -16,6 +16,7 @@ exportedBoolToStringIO => True
 Alan Kay
 Kay, Alan
 3
+createPerson, exportedBoolToString, exportedBoolToStringIO, exportedIncInt, firstName, lastName, printMethod, take5, VoidFunction
 -}
 
 module Main
@@ -182,14 +183,25 @@ testBoxingUnboxing type = do
   ret <- invokeStaticMethod type "exportedIncInt" (Just !(objectArrayFor [asObject 2]))
   maybe (pure "ERROR") ToString ret >>= putStrLn
 
+getExportsType : CIL_IO RuntimeType
+getExportsType = do
+  asm <- GetExecutingAssembly
+  GetType asm "TheExports" True
+
+testGetMethodsWithBindingFlags : CIL_IO ()
+testGetMethodsWithBindingFlags = do
+  type <- getExportsType
+  methods <- type `GetMethods` (Public + Static)
+  methodNames <- foldr (\m, acc => (:: acc) <$> get_Name m) (the (List String) []) methods
+  putStrLn . concat . intersperse ", " . sort $ methodNames
+
 main : CIL_IO ()
 main = do
   testOverloadedStaticMethod
   testInstanceMethods
   testValueType
 
-  asm <- GetExecutingAssembly
-  type <- GetType asm "TheExports" True
+  type <- getExportsType
   for_ (the (List _) ["VoidFunction", "exportedBoolToString", "printMethod", "take5"]) $
     printMethod type
 
@@ -197,6 +209,7 @@ main = do
   testExportedBoolToStringIO type
   testExportedRecord
   testBoxingUnboxing type
+  testGetMethodsWithBindingFlags
 
 -- Exports
 

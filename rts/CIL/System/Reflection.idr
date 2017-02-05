@@ -3,6 +3,10 @@ module CIL.System.Reflection
 import public CIL.FFI
 import public CIL.FFI.Array
 
+import CIL.Elab.Enums
+
+%language ElabReflection
+
 %default total
 
 %access public export
@@ -19,6 +23,9 @@ MethodInfoTy = corlibTy "System.Reflection.MethodInfo"
 MethodInfo : Type
 MethodInfo = CIL MethodInfoTy
 
+MethodInfoArray : Type
+MethodInfoArray = TypedArrayOf MethodInfoTy
+
 ParameterInfoTy : CILTy
 ParameterInfoTy = corlibTy "System.Reflection.ParameterInfo"
 
@@ -32,7 +39,19 @@ TypeArray : Type
 TypeArray = TypedArrayOf RuntimeTypeTy
 
 implementation IsA Object MethodInfo where {}
+
 implementation IsA Object Assembly where {}
+
+BindingFlagsTy : CILTy
+BindingFlagsTy = corlibTyVal "System.Reflection.BindingFlags"
+
+namespace BindingFlags
+
+  %runElab
+    cilEnum BindingFlags BindingFlagsTy Bits32
+            [ cilField Static 0x08
+            , cilField Public 0x10
+            ]
 
 GetExecutingAssembly : CIL_IO Assembly
 GetExecutingAssembly =
@@ -41,15 +60,15 @@ GetExecutingAssembly =
 
 namespace Assembly
 
-    GetType : Assembly -> String -> Bool -> CIL_IO RuntimeType
-    GetType =
-        invoke (CILInstance "GetType")
-               (Assembly -> String -> Bool -> CIL_IO RuntimeType)
+  GetType : Assembly -> String -> Bool -> CIL_IO RuntimeType
+  GetType =
+    invoke (CILInstance "GetType")
+           (Assembly -> String -> Bool -> CIL_IO RuntimeType)
 
-    GetExportedTypes : Assembly -> CIL_IO TypeArray
-    GetExportedTypes =
-        invoke (CILInstance "GetExportedTypes")
-               (Assembly -> CIL_IO TypeArray)
+  GetExportedTypes : Assembly -> CIL_IO TypeArray
+  GetExportedTypes =
+    invoke (CILInstance "GetExportedTypes")
+           (Assembly -> CIL_IO TypeArray)
 
 namespace RuntimeType
 
@@ -60,6 +79,11 @@ namespace RuntimeType
   GetMethod =
     invoke (CILInstance "GetMethod")
            (RuntimeType -> String -> CIL_IO (Maybe MethodInfo))
+
+  GetMethods : RuntimeType -> BindingFlags -> CIL_IO MethodInfoArray
+  GetMethods =
+    invoke (CILInstance "GetMethods")
+           (RuntimeType -> BindingFlags -> CIL_IO MethodInfoArray)
 
 namespace MethodInfo
 
@@ -75,7 +99,7 @@ namespace MethodInfo
   Invoke : MethodInfo -> Maybe Object -> Maybe ObjectArray -> CIL_IO Object
   Invoke =
     invoke (CILInstance "Invoke")
-            (MethodInfo -> Maybe Object -> Maybe ObjectArray -> CIL_IO Object)
+           (MethodInfo -> Maybe Object -> Maybe ObjectArray -> CIL_IO Object)
 
 namespace ParameterInfo
 
