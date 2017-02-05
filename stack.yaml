@@ -1,14 +1,17 @@
-resolver: lts-7.15
+resolver: lts-7.19
 packages:
   - location: .
   - location:
       git: https://github.com/bamboo/language-cil.git
       commit: 0438ed5173c9d0ddeb55f315464f5e9fec6c1731
     extra-dep: true
+  - location:
+      git: https://github.com/idris-lang/Idris-dev.git
+      commit: 823d5d7cf19b0e4de9faa1b867abbd8b2dc8faa5
+    extra-dep: true
 flags:
   idris:
     ffi: true
 extra-deps:
   - bool-extras-0.4.0
-  - idris-0.12.3
   - libffi-0.1
