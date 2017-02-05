@@ -82,8 +82,6 @@ data CILForeign =
   CILStatic CILTy String |
   ||| Read the value of the named static field of the given foreign type.
   CILStaticField CILTy String |
-  ||| Box the integer value given as a string into the given enum type.
-  CILEnumValueOf CILTy String |
   ||| Call a constructor to instantiate an object.
   CILConstructor |
   ||| Load the given runtime type.
@@ -94,6 +92,12 @@ data CILForeign =
   CILExport String |
   ||| Export a function under its original name.
   CILDefault
+
+||| A CIL enum type.
+|||
+||| @cilTy the external CIL type
+||| @reprTy the native representation type (must be either Bits16 or Bits32)
+data CILEnum : (cilTy : CILTy) -> (reprTy : Type) -> Type
 
 mutual
   data CIL_IntTypes  : Type -> Type where
@@ -110,6 +114,7 @@ mutual
        CIL_IntT  : CIL_IntTypes i -> CIL_Types i
        CIL_CILT  : CIL_Types (CIL ty)
        CIL_FnT   : CIL_FnTypes fnT -> CIL_Types (CilFn delegateTy fnT)
+       CIL_EnumT : CIL_Types (CILEnum cilTy reprTy)
        CIL_MaybeT : CIL_Types ty -> CIL_Types (Maybe ty)
 
   data CilFn   : CILTy -> Type -> Type where
@@ -253,6 +258,26 @@ namespace System.Convert
     invoke (CILStatic (corlibTy "System.Convert") "ToInt32")
            (Object -> CIL_IO Int)
            (asObject o)
+
+namespace Enums
+
+  export
+  theEnum : reprTy -> CILEnum cilTy reprTy
+  theEnum e = believe_me e
+
+  export
+  fromEnum : CILEnum cilTy reprTy -> reprTy
+  fromEnum e = believe_me e
+
+  export
+  (+) : (Num reprTy) => CILEnum cilTy reprTy -> CILEnum cilTy reprTy -> CILEnum cilTy reprTy
+  (+) lhs rhs = theEnum (fromEnum lhs + fromEnum rhs)
+
+(Num reprTy) => Semigroup (CILEnum cilTy reprTy) where
+  (<+>) = (+)
+
+(Num reprTy) => Monoid (CILEnum cilTy reprTy) where
+  neutral = theEnum 0
 
 putStr : String -> CIL_IO ()
 putStr = putStr'

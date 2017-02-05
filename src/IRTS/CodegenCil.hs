@@ -379,10 +379,6 @@ emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
         emitForeign (CILTypeOf t) =
           cilTypeOf t
 
-        emitForeign (CILEnumValueOf t i) =
-          tell [ ldc i
-               , box t ]
-
         emitForeign CILConstructor =
           case retType of
             Array _ -> emitNewArray retType
@@ -709,16 +705,17 @@ storeLocal i = do
   where ensureLocal st@CilEmitterState{..} = st { localCount = max localCount (i + 1) }
 
 emitBranchEq :: Const -> String -> CilEmitter ()
-emitBranchEq (BI i) target = emitBranchEq (I . fromIntegral $ i) target
-emitBranchEq (Ch c) target =
-  tell [ unbox_any Char
-       , ldc $ ord c
+emitBranchEq (Ch c)  target = emitPrimitiveBranchEq Char  (ldc (ord c)) target
+emitBranchEq (B32 i) target = emitPrimitiveBranchEq Int32 (ldc i) target
+emitBranchEq (I i)   target = emitPrimitiveBranchEq Int32 (ldc i) target
+emitBranchEq (BI i)  target = emitPrimitiveBranchEq Int32 (ldc i) target
+emitBranchEq c       _      = unsupported "branch on const" c
+
+emitPrimitiveBranchEq :: PrimitiveType -> Instruction -> String -> CilEmitter ()
+emitPrimitiveBranchEq ty ldconst target =
+  tell [ unbox_any ty
+       , ldconst
        , beq target ]
-emitBranchEq (I i) target =
-  tell [ unbox_any Int32
-       , ldc i
-       , beq target ]
-emitBranchEq c _ = unsupported "branch on const" c
 
 emitSConCase :: LVar -> SAlt -> CilEmitter ()
 emitSConCase v (SConCase offset _ _ fs sexp) = do
@@ -1289,6 +1286,7 @@ recordFieldNamesFor arity = ("f" ++) . show <$> [1..arity]
 recordTypeNameFor :: Int -> TypeName
 recordTypeNameFor = (recordTypeName ++) . show
 
+boxedBoolTypeName :: TypeName
 boxedBoolTypeName = "BoxedBool"
 
 boxedBoolType :: TypeDef

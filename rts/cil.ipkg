@@ -4,6 +4,7 @@ modules = CIL.FFI
         , CIL.FFI.Array
         , CIL.FFI.Effects
         , CIL.FFI.Single
+        , CIL.Elab.Enums
         , CIL.System.Reflection
         , Data.Vector
         , Data.HashSet

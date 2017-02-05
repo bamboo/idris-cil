@@ -34,7 +34,6 @@ data CILForeign
   | CILConstructor
   | CILTypeOf         !CILTy
   | CILDelegate       !CILTy
-  | CILEnumValueOf    !CILTy !Integer
   | CILExport         !String
   | CILDefault
   | CILAssemblyRef    !String !Version !String
@@ -57,8 +56,6 @@ parseDescriptor (FApp ffi [ty])
   | ffi == sUN "CILDelegate"       = CILDelegate (foreignType ty)
 parseDescriptor (FApp ffi [ty])
   | ffi == sUN "CILTypeOf"         = CILTypeOf (foreignType ty)
-parseDescriptor (FApp ffi [ty, FStr i])
-  | ffi == sUN "CILEnumValueOf"    = CILEnumValueOf (foreignType ty) (read i)
 parseDescriptor (FApp ffi [method])
   | ffi == sUN "CILCall"           = CILCall (foreignMethod method)
 parseDescriptor (FApp ffi [FStr n, FStr v, FStr pubKeyToken])
@@ -103,6 +100,9 @@ foreignType (FApp cilTy [_, ty, _])
 
 foreignType (FApp cilTy [_, ty])
   | cilTy == sUN "CIL_MaybeT" = foreignType ty
+
+foreignType (FApp cilTy [_, ty])
+  | cilTy == sUN "CIL_EnumT" = foreignType ty
 
 foreignType (FApp cilTy [ty])
   | cilTy == sUN "CILTyArr" = Array $ foreignType ty
