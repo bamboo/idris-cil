@@ -131,8 +131,9 @@ member key (MkHashSet _ root) =
         HashCollision existingHashCode keys =>
           existingHashCode == hashCode && elem key keys
         SubTrie bitmap nodes =>
-          let bitPos = next5Bits nextLevel hashCode
-              bitVal = bitAt bitPos bitmap
+          let
+            bitPos = next5Bits nextLevel hashCode
+            bitVal = bitAt bitPos bitmap
           in
             if bitVal
               then assert_total (memberOf nodes (nodeIndex bitPos bitmap) (nextLevel + 1))
@@ -148,7 +149,7 @@ Or the key will collide with an existing one. In which case the existing key mus
 -}
 insert' : (Hash a) => HashCode -> a -> HashSet a -> HashSet a
 insert' hashCode key set@(MkHashSet size root) =
-   case nodeAt rootPos root of
+  case nodeAt rootPos root of
      Empty => insertRootNode (Key hashCode key)
      SubTrie bitmap nodes =>
        maybe set insertRootNode (insertIntoSubTrie bitmap nodes 1)
