@@ -8,6 +8,8 @@ is Just
 ==
 /=
 ==
+Just 42
+Nothing
 -}
 
 import CIL.FFI
@@ -27,9 +29,7 @@ putIsJust _        = putStrLn "is not Just"
 
 %inline
 invokeMaybeString : String -> Maybe String -> CIL_IO ()
-invokeMaybeString fn s = do
-  asm <- GetExecutingAssembly
-  type <- GetType asm "TheExports" True
+invokeMaybeString fn s =
   invoke (CILStatic (CILTyRef "" "TheExports") fn) (Maybe String -> CIL_IO ()) s
 
 testFFI : Maybe String -> CIL_IO ()
@@ -45,6 +45,18 @@ valueOf True  = Just "True"
 testMaybeEq : Bool -> Maybe String -> CIL_IO ()
 testMaybeEq b m = putStrLn (if valueOf b == m then "==" else "/=")
 
+maybeInt : Bool -> Maybe Int
+maybeInt True  = Just 42
+maybeInt False = Nothing
+
+testMaybeInt : Bool -> CIL_IO ()
+testMaybeInt b = printLn (maybeInt b)
+
+%inline
+invokeTestMaybeInt : Bool -> CIL_IO ()
+invokeTestMaybeInt =
+  invoke (CILStatic (CILTyRef "" "TheExports") "testMaybeInt") (Bool -> CIL_IO ())
+
 main : CIL_IO ()
 main = do
   testFFI Nothing
@@ -52,12 +64,15 @@ main = do
   testMaybeEq False Nothing
   testMaybeEq False (Just "True")
   testMaybeEq True  (Just "True")
+  invokeTestMaybeInt True
+  invokeTestMaybeInt False
 
 exports : FFI_Export FFI_CIL "TheExports" []
 exports =
   Fun putMaybeString CILDefault $
   Fun putIsNothing CILDefault $
   Fun putIsJust CILDefault $
+  Fun testMaybeInt CILDefault $
   End
 
 -- Local Variables:
