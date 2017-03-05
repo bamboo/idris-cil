@@ -21,6 +21,7 @@ library
   ghc-options:      -funbox-strict-fields
   hs-source-dirs:   src
   exposed-modules:  IRTS.CodegenCil
+                  , IRTS.Cil.CaseDispatch
   other-modules:    IRTS.Cil.UnreachableCodeRemoval
                   , IRTS.Cil.FFI
                   , IRTS.Cil.VersionParser

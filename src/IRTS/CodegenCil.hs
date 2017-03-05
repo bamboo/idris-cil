@@ -4,6 +4,7 @@
 {-# LANGUAGE ViewPatterns #-}
 module IRTS.CodegenCil (codegenCil, compileCilCodegenInfo, CilCodegenInfo) where
 
+import           Control.Arrow ((&&&))
 import           Control.Monad.RWS.Strict hiding (local)
 import           Control.Monad.State.Strict
 
@@ -21,6 +22,7 @@ import qualified Data.Text as T
 
 import           IRTS.Cil.FFI
 import           IRTS.Cil.MaxStack
+import           IRTS.Cil.CaseDispatch
 import           IRTS.CodegenCommon
 import           IRTS.Compiler
 import           IRTS.Lang
@@ -44,11 +46,12 @@ import           IRTS.Cil.OptimizeLocals
 
 type CilCodegenInfo = (CodegenInfo, IState)
 
-data CilCodegenState = CilCodegenState { delegateTypes :: !(M.Map ForeignFunctionType MethodDef)
-                                       , assemblyRefs  :: !AssemblyRefSet
-                                       , cafs          :: !CAFs
-                                       , constTags     :: !IntSet.IntSet
-                                       , recordArities :: !IntSet.IntSet }
+data CilCodegenState = CilCodegenState
+  { delegateTypes :: !(M.Map ForeignFunctionType MethodDef)
+  , assemblyRefs  :: !AssemblyRefSet
+  , cafs          :: !CAFs
+  , constTags     :: !IntSet.IntSet
+  , recordArities :: !IntSet.IntSet }
 
 type AssemblyRefSet = Set.Set AssemblyRef
 
@@ -151,8 +154,9 @@ method decl@(SFun name ps _ sexp) = do
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
         removeLastTailCall _ = error "Entry point should end in tail call"
 
-data CilExport = CilFun  !MethodDef
-               | CilType !TypeDef
+data CilExport
+  = CilFun  !MethodDef
+  | CilType !TypeDef
 
 type CAF a = State CAFs a
 
@@ -212,9 +216,10 @@ data SimpleDeclaration = SimpleDeclaration !SDecl !Int -- cached param count
 
 type MethodBody = DList Instruction
 
-data CilEmitterState = CilEmitterState { nextSuffix :: !Int
-                                       , localCount :: !Int
-                                       , cilCodegenState  :: !CilCodegenState }
+data CilEmitterState = CilEmitterState
+  { nextSuffix :: !Int
+  , localCount :: !Int
+  , cilCodegenState  :: !CilCodegenState }
 
 type CilEmitter a = RWS SimpleDeclaration MethodBody CilEmitterState a
 
@@ -321,40 +326,40 @@ emit (SCase Shared v [SConstCase c thenAlt, SDefaultCase elseAlt]) =
 
 emit (SCase Shared v [c@SConCase{}]) = emitSConCase v c
 
-emit (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = do
-  val <- storeTemp Char v
-  labels <- uniqueLabelsFor alts
-  emitLabeledAlts (emitAlt val) alts labels
+emit (SCase Shared v alts@(SConstCase (Ch _) _ : _)) = emitSwitchCase v alts (const loadTag) altTag
   where
-    emitAlt :: String -> Label -> (String, SAlt) -> CilEmitter ()
-    emitAlt val end (l, SConstCase (Ch t) e) = do
-      tell [ ldc $ ord t
-           , ldlocN val
-           , ceq
-           , brfalse l ]
-      emit e
-      tell [ br end
-           , label l ]
-    emitAlt _ end (l, SDefaultCase e) = do
-      emit e
-      tell [ br end ]
-    emitAlt _ _ (_, c) = unsupported "char case" c
+    loadTag = tell [ unbox_any Char
+                   , conv_i4 ]
+    altTag (SConstCase (Ch t) _) = ord t
+    altTag alt = error $ "expecting (SConstCase (Ch t)) got: " <> show alt
 
+emit (SCase Shared v alts@(SConstCase (I _) _ : _)) = emitSwitchCase v alts (const loadTag) altTag
+  where
+    loadTag = tell [ unbox_any Int32 ]
+    altTag (SConstCase (I t) _) = t
+    altTag alt = error $ "expecting (SConstCase (I t)) got: " <> show alt
 
-emit e@(SCase Shared v alts) = let (cases, defaultCase) = partition caseType alts
-                               in case defaultCase of
-                                   [] -> emitCase v (sorted cases <> [SDefaultCase SNothing])
-                                   _  -> emitCase v (sorted cases <> defaultCase)
-   where sorted = sortBy (compare `on` tag)
-         tag (SConCase _ t _ _ _) = t
-         tag (SConstCase (I t) _) = t
-         tag c                    = unsupportedCase c
-         caseType SDefaultCase{}  = False
-         caseType _               = True
-         unsupportedCase c        = error $ show c <> " in\n" <> show e
+emit e@(SCase Shared v alts) = emitSwitchCase v (withDefaultCase alts) (const loadRecordTag) tagFromSConCase
+  where
+    withDefaultCase :: [SAlt] -> [SAlt]
+    withDefaultCase alts =
+      if any isDefaultCase alts
+        then alts
+        else alts <> [SDefaultCase SNothing]
 
 emit (SChkCase _ [SDefaultCase e]) = emit e
-emit (SChkCase v alts) = emitChkCase v alts
+
+emit (SChkCase v alts) = emitSwitchCase v alts maybeLoadRecordTag tagFromSConCase
+  where
+    maybeLoadRecordTag :: String -> CilEmitter ()
+    maybeLoadRecordTag defaultLabel = do
+      tell [ isinst recordTypeName ]
+      record <- storeTempFromStack recordTypeRef
+      tell [ ldlocN record
+           , brfalse defaultLabel
+           , ldlocN record
+           , loadRecordTagField ]
+
 
 emit (SApp isTailCall n args) =
   if null args
@@ -587,14 +592,14 @@ emitConst (Str s) = tell [ ldstr s ]
 emitConst (I i)   = emitConst . BI . fromIntegral $ i
 emitConst (B32 i) = emitConst . BI . fromIntegral $ i
 emitConst (B16 i) = emitConst . BI . fromIntegral $ i
-emitConst (B8 i) = emitConst . BI . fromIntegral $ i
+emitConst (B8 i)  = emitConst . BI . fromIntegral $ i
 emitConst (BI i)  = tell [ ldc i
                          , boxInt32 ]
 emitConst (Ch c)  = tell [ ldc $ ord c
                          , boxChar ]
 emitConst (Fl d)  = tell [ ldc_r8 d
                          , boxDouble64 ]
-emitConst c = unsupported "const" c
+emitConst c       = unsupported "const" c
 {-
   = I Int
   | BI Integer
@@ -613,85 +618,86 @@ emitConst c = unsupported "const" c
   | Forgot
 -}
 
-emitCase :: LVar -> [SAlt] -> CilEmitter ()
-emitCase v alts@(SConstCase (I _) _ : _) = emitSwitchCase v alts (const loadTag) altTag
-  where loadTag = tell [ unbox_any Int32 ]
-        altTag (SConstCase (I t) _) = t
-        altTag alt = error $ "expecting (SConstCase (I t)) got: " <> show alt
-
-emitCase v alts = emitSwitchCase v (consecutiveAltsFor alts) (const loadRecordTag) tagFromSConCase
-
-emitChkCase :: LVar -> [SAlt] -> CilEmitter ()
-emitChkCase v alts = emitSwitchCase v (consecutiveAltsFor alts) maybeLoadRecordTag tagFromSConCase
-  where maybeLoadRecordTag :: String -> CilEmitter ()
-        maybeLoadRecordTag defaultLabel = do
-          tell [ isinst recordTypeName ]
-          record <- storeTempFromStack recordTypeRef
-          tell [ ldlocN record
-               , brfalse defaultLabel
-               , ldlocN record
-               , loadRecordTagField
-               ]
-
-consecutiveAltsFor :: [SAlt] -> [SAlt]
-consecutiveAltsFor alts = let (caseAlts, defaultAlts) = span isSConCase alts
-                          in fillInTheGaps tagFromSConCase unreachableAlt caseAlts ++ defaultAlts
-  where unreachableAlt tag = SConCase 0 tag unreachableName [] SNothing
-
 tagFromSConCase :: SAlt -> Int
 tagFromSConCase (SConCase _ t _ _ _) = t
 tagFromSConCase alt = error $ "expecting SConCase got: " <> show alt
-
-isSConCase :: SAlt -> Bool
-isSConCase SConCase{} = True
-isSConCase _          = False
-
-unreachableName :: Name
-unreachableName = UN "unreachable!"
-
-fillInTheGaps :: (a -> Int) -> (Int -> a) -> [a] -> [a]
-fillInTheGaps extract create = go empty
-  where go acc (i:j:rest) = let gap = [(extract i + 1)..(extract j - 1)]
-                            in go (acc <> singleton i <> fromList (create <$> gap)) (j:rest)
-        go acc rest       = toList acc <> rest
 
 uniqueLabelsFor :: [a] -> CilEmitter [String]
 uniqueLabelsFor alts = do
   uniqueLabelPrefix <- gensym "L"
   pure $ (uniqueLabelPrefix <>) . show <$> [0..(length alts - 1)]
 
-emitLabeledAlts :: (Label -> (Label, SAlt) -> CilEmitter ()) -> [SAlt] -> [Label] -> CilEmitter ()
-emitLabeledAlts emitAlt alts labels = do
-  endLabel <- gensym "END"
-  mapM_ (emitAlt endLabel) (zip labels alts)
-  tell [ label endLabel ]
+isDefaultCase :: SAlt -> Bool
+isDefaultCase SDefaultCase{} = True
+isDefaultCase _              = False
 
 emitSwitchCase :: LVar -> [SAlt] -> (String -> CilEmitter ()) -> (SAlt -> Int) -> CilEmitter ()
-emitSwitchCase val alts loadTag altTag | canBuildJumpTable alts = do
-  labels <- uniqueLabelsFor alts
-  let defaultLabel = last labels
-  load val
-  loadTag defaultLabel
-  tell [ ldc baseTag
-       , sub
-       , switch labels
-       , br defaultLabel ]
-  emitLabeledAlts (emitAlt val) alts labels
-  where canBuildJumpTable (a:as) = canBuildJumpTable' (altTag a) as
-        canBuildJumpTable _      = False
-        canBuildJumpTable' _ [SDefaultCase _]     = True
-        canBuildJumpTable' t (a:as) | t' == t + 1 = canBuildJumpTable' t' as where t' = altTag a
-        canBuildJumpTable' _ _                    = False
-        baseTag = altTag (head alts)
-        emitAlt v end (l, alt) = do
-          tell [ label l ]
-          case alt of
-            SConstCase _ e -> emit e
-            SDefaultCase e -> emit e
-            c              -> emitSConCase v c
-          tell [ br end ]
+emitSwitchCase var alts loadTagFromStack altTag =
+  let
+    (caseAlts, [SDefaultCase defaultSExp]) = Prelude.break isDefaultCase alts
+    taggedCaseAlts = (altTag &&& id) <$> caseAlts
+  in
+    dispatchUsing (dispatchStrategyFor taggedCaseAlts) defaultSExp
+  where
+    dispatchUsing :: DispatchStrategy SAlt -> SExp -> CilEmitter ()
+    dispatchUsing (JumpTable entries) defaultSExp = do
+      (defaultLabel, endLabel, entryLabels) <- prepareToDispatchOn entries
+      let baseTag = fst . head $ entries
+      adjustTagOffset baseTag
+      tell [ switch entryLabels ]
+      tell [ label defaultLabel ]
+      emit defaultSExp
+      tell [ br endLabel ]
+      zipWithM_ (emitJumpEntry defaultLabel endLabel) entryLabels (snd <$> entries)
+      tell [ label endLabel ]
 
-emitSwitchCase _ alts _ _ = unsupported "switch case alternatives" (descAlt <$> alts)
+    dispatchUsing (LinearSearch entries) defaultSExp = do
+      (defaultLabel, endLabel, entryLabels) <- prepareToDispatchOn entries
+      tagVar <- storeTempFromStack Int32
+      zipWithM_ (emitLinearSearchEntry tagVar endLabel) entries (Prelude.tail entryLabels <> [defaultLabel])
+      emit defaultSExp
+      tell [ label endLabel ]
+
+    prepareToDispatchOn :: [a] -> CilEmitter (Label, Label, [Label])
+    prepareToDispatchOn entries = do
+      defaultLabel <- gensym "DEFAULT"
+      endLabel <- gensym "END"
+      entryLabels <- uniqueLabelsFor entries
+      loadTagOrJumpTo defaultLabel
+      pure (defaultLabel, endLabel, entryLabels)
+
+    adjustTagOffset :: Int -> CilEmitter ()
+    adjustTagOffset baseTag =
+      when (baseTag /= 0) $
+        tell [ ldc baseTag
+             , sub ]
+
+    emitJumpEntry :: Label -> Label -> Label -> JumpTableEntry SAlt -> CilEmitter ()
+    emitJumpEntry defaultLabel _        l DefaultEntry =
+      tell [ label l
+           , br defaultLabel ]
+    emitJumpEntry _            endLabel l (Entry alt) = do
+      tell [ label l ]
+      emitAlt alt
+      tell [ br endLabel ]
+
+    emitLinearSearchEntry :: String -> Label -> (Int, SAlt) -> Label -> CilEmitter ()
+    emitLinearSearchEntry var endLabel (tag, alt) nextLabel = do
+      tell [ ldlocN var
+           , ldc tag
+           , ceq
+           , brfalse nextLabel ]
+      emitAlt alt
+      tell [ br endLabel
+           , label nextLabel ]
+
+    emitAlt (SConstCase _ e) = emit e
+    emitAlt (SDefaultCase e) = emit e
+    emitAlt c                = emitSConCase var c
+
+    loadTagOrJumpTo :: Label -> CilEmitter ()
+    loadTagOrJumpTo defaultLabel = load var >> loadTagFromStack defaultLabel
+
 
 descAlt :: SAlt -> String
 descAlt (SConCase _ t _ _ _) = "SConCase " <> show t
@@ -760,7 +766,8 @@ emitOp (LOr (ITFixed IT32)) args = emitInt32Op Cil.or args
 emitOp (LAnd (ITFixed IT32)) args = emitInt32Op Cil.and args
 emitOp (LAnd (ITFixed IT8)) args = emitInt32Op Cil.and args
 emitOp (LTrunc (ITFixed IT32) (ITFixed IT16)) [x] = load x
-emitOp (LTrunc (ITFixed IT16) (ITFixed IT8)) [x] = load x
+emitOp (LTrunc (ITFixed IT32) (ITFixed IT8))  [x] = load x
+emitOp (LTrunc (ITFixed IT16) (ITFixed IT8))  [x] = load x
 emitOp LWriteStr [_, s] = do
   load s
   tell [ castclass String
@@ -888,6 +895,7 @@ emitOp (LTimes ATFloat)       args = emitFloatOp mul args
 emitOp (LSDiv ATFloat)        args = emitFloatOp Cil.div args
 emitOp (LPlus ATFloat)        args = emitFloatOp add args
 emitOp (LMinus ATFloat)       args = emitFloatOp sub args
+emitOp (LEq ATFloat)          args = emitPrimitiveOp Double64 Int32 ceq args
 emitOp LFloatStr              [f]  = emitPrimitiveToString f
 emitOp LStrFloat              [s]  = emitTryParse Double64 s
 emitOp (LExternal name)       args = emitExternalOp name args
@@ -1103,10 +1111,10 @@ emitNumOp :: PrimitiveType -> Instruction -> [LVar] -> CilEmitter ()
 emitNumOp t = emitPrimitiveOp t t
 
 emitPrimitiveOp :: PrimitiveType -> PrimitiveType -> Instruction -> [LVar] -> CilEmitter ()
-emitPrimitiveOp argT resT op args = do
-  forM_ args (loadAs argT)
+emitPrimitiveOp argTy resTy op args = do
+  forM_ args (loadAs argTy)
   tell [ op
-       , box resT ]
+       , box resTy ]
 
 boxDouble64, boxFloat32, boxInt32, boxChar, boxBoolean :: Instruction
 boxDouble64 = box Double64
