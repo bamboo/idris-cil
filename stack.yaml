@@ -1,4 +1,4 @@
-resolver: lts-7.19
+resolver: lts-8.8
 packages:
   - location: .
   - location:
@@ -7,7 +7,7 @@ packages:
     extra-dep: true
   - location:
       git: https://github.com/idris-lang/Idris-dev.git
-      commit: 0ceaa30a7593d943a6fdd5e1d15766003adda7ac
+      commit: 385f84850f169756c1de651b3061dddb3fede756
     extra-dep: true
 flags:
   idris:

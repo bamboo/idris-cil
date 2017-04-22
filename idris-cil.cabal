@@ -34,7 +34,7 @@ library
                   , directory
                   , dlist >= 0.7.1.1
                   , filepath
-                  , idris >= 0.12.2
+                  , idris >= 1.0
                   , language-cil >= 0.4.1
                   , mtl
                   , process
@@ -51,7 +51,7 @@ executable idris-codegen-cil
                     , directory
                     , filepath
                     , haskeline
-                    , idris >= 0.12.2
+                    , idris >= 1.0
                     , mtl
                     , text
                     , transformers
@@ -82,7 +82,7 @@ test-suite spec
                   , hspec-expectations-pretty-diff
                   , smallcheck
                   , hspec-smallcheck
-                  , idris >= 0.12.2
+                  , idris >= 1.0
                   , idris-cil
 
 test-suite hlint
