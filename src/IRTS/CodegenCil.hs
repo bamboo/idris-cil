@@ -4,25 +4,12 @@
 {-# LANGUAGE ViewPatterns #-}
 module IRTS.CodegenCil (codegenCil, compileCilCodegenInfo, CilCodegenInfo) where
 
-import           Control.Arrow ((&&&))
-import           Control.Monad.RWS.Strict hiding (local)
-import           Control.Monad.State.Strict
-
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.UTF8 as UTF8
-import           Data.Char (ord)
-import           Data.DList (DList, empty, singleton, fromList, toList, snoc)
-import           Data.Function (on)
-import qualified Data.IntSet as IntSet
-import           Data.List (partition, sortBy)
-import qualified Data.Map.Strict as M
-import           Data.Maybe (mapMaybe)
-import qualified Data.Set as Set
-import qualified Data.Text as T
-
+import           IRTS.Cil.CaseDispatch
 import           IRTS.Cil.FFI
 import           IRTS.Cil.MaxStack
-import           IRTS.Cil.CaseDispatch
+import           IRTS.Cil.OptimizeLocals
+import           IRTS.Cil.Types
+
 import           IRTS.CodegenCommon
 import           IRTS.Compiler
 import           IRTS.Lang
@@ -36,13 +23,26 @@ import           Idris.Main (loadInputs)
 import           Language.Cil
 import qualified Language.Cil as Cil
 
+import           Control.Arrow ((&&&))
+import           Control.Monad.RWS.Strict hiding (local)
+import           Control.Monad.State.Strict
+
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.UTF8 as UTF8
+import           Data.Char (ord)
+import           Data.DList (DList, empty, singleton, fromList, toList, snoc)
+import           Data.Function (on, (&))
+import qualified Data.IntSet as IntSet
+import           Data.List (partition, sortBy)
+import qualified Data.Map.Strict as M
+import           Data.Maybe (mapMaybe)
+import qualified Data.Set as Set
+import qualified Data.Text as T
+
 import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
 import           System.Process (readProcess)
 
 import           GHC.Float
-
-import           IRTS.Cil.Types
-import           IRTS.Cil.OptimizeLocals
 
 type CilCodegenInfo = (CodegenInfo, IState)
 
@@ -155,8 +155,8 @@ method decl@(SFun name ps _ sexp) = do
         removeLastTailCall _ = error "Entry point should end in tail call"
 
 data CilExport
-  = CilFun  !MethodDef
-  | CilType !TypeDef
+  = CilFun  { unCilFun :: !MethodDef }
+  | CilType { unCilType :: !TypeDef }
 
 type CAF a = State CAFs a
 
@@ -166,8 +166,8 @@ exportedTypes cci@(ci, _) = concatMapM exports (exportDecls ci)
         exports (Export (sn -> "FFI_CIL") exportedDataType es) = do
           cilExports <- mapM (cilExport cci) es
           let (cilFuns, cilTypes) = partition isCilFun cilExports
-              methods = (\(CilFun m) -> m) <$> cilFuns
-              types   = (\(CilType t) -> t) <$> cilTypes
+              methods = unCilFun <$> cilFuns
+              types   = unCilType <$> cilTypes
           pure $ publicClass exportedDataType methods : types
           where isCilFun (CilFun _) = True
                 isCilFun _          = False
@@ -559,6 +559,7 @@ loadRecordTag :: CilEmitter ()
 loadRecordTag = tell [ castclass recordTypeRef
                      , loadRecordTagField ]
 
+loadRecordTagField :: Instruction
 loadRecordTagField = ldfld Int32 "" recordTypeName "tag"
 
 emitIfThenElse :: LVar -> SExp -> SExp -> (String -> CilEmitter ()) -> CilEmitter ()
