@@ -20,7 +20,7 @@ dispatchStrategyForSpec =
 
     it "should return JumpTable for dense sequence" $
       let
-        denseSeq = (id &&& id) <$> [0..5]
+        denseSeq = pair <$> [0..5]
       in
         dispatchStrategyFor denseSeq
           `shouldBe` JumpTable (fmap Entry <$> denseSeq)
@@ -39,6 +39,15 @@ dispatchStrategyForSpec =
         dispatchStrategyFor sparseSeq
           `shouldBe` LinearSearch sparseSeq
 
+    it "should sort the entries" $
+        let
+          seq = pair <$> [0, 3, 1]
+        in
+          dispatchStrategyFor seq
+            `shouldBe` JumpTable [(0, Entry 0), (1, Entry 1), (2, DefaultEntry), (3, Entry 3)]
+
+
+pair x = (x, x)
 
 isDenseSpec :: Spec
 isDenseSpec =

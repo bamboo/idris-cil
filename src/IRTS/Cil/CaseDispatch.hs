@@ -2,6 +2,9 @@
 
 module IRTS.Cil.CaseDispatch where
 
+import Data.Function (on)
+import Data.List (sortBy)
+
 data DispatchStrategy a
   = JumpTable    [(Int, JumpTableEntry a)]
   | LinearSearch [(Int, a)]
@@ -19,8 +22,10 @@ deriving instance Eq a => Eq (JumpTableEntry a)
 
 dispatchStrategyFor :: [(Int, a)] -> DispatchStrategy a
 dispatchStrategyFor alts
-  | length alts > 2 && isDense (fst <$> alts) = JumpTable (jumpTableEntriesFor alts)
-  | otherwise                                 = LinearSearch alts
+  | length alts > 2 && isDense (fst <$> sortedAlts) = JumpTable (jumpTableEntriesFor sortedAlts)
+  | otherwise                                       = LinearSearch sortedAlts
+  where
+    sortedAlts = sortBy (compare `on` fst) alts
 
 jumpTableEntriesFor :: [(Int, a)] -> [(Int, JumpTableEntry a)]
 jumpTableEntriesFor = entries
