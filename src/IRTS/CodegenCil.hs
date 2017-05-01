@@ -684,10 +684,13 @@ emitSwitchCase var alts loadTagFromStack altTag =
 
     emitLinearSearchEntry :: String -> Label -> (Int, SAlt) -> Label -> CilEmitter ()
     emitLinearSearchEntry var endLabel (tag, alt) nextLabel = do
-      tell [ ldlocN var
-           , ldc tag
-           , ceq
-           , brfalse nextLabel ]
+      tell [ ldlocN var ]
+      tell $
+        if tag == 0
+            then [ brtrue nextLabel ]
+            else [ ldc tag
+                 , ceq
+                 , brfalse nextLabel ]
       emitAlt alt
       tell [ br endLabel
            , label nextLabel ]
