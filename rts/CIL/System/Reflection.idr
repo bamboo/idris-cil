@@ -11,6 +11,12 @@ import CIL.Elab.Enums
 
 %access public export
 
+AppDomainTy : CILTy
+AppDomainTy = corlibTy "System.AppDomain"
+
+AppDomain : Type
+AppDomain = CIL AppDomainTy
+
 AssemblyTy : CILTy
 AssemblyTy = corlibTy "System.Reflection.Assembly"
 
@@ -70,6 +76,11 @@ namespace Assembly
     invoke (CILInstance "GetExportedTypes")
            (Assembly -> CIL_IO TypeArray)
 
+  Load : String -> CIL_IO Assembly
+  Load =
+    invoke (CILStatic AssemblyTy "Load")
+           (String -> CIL_IO Assembly)
+
 namespace RuntimeType
 
   get_Name : RuntimeType -> CIL_IO String
@@ -109,3 +120,10 @@ namespace ParameterInfo
   get_ParameterType : ParameterInfo -> CIL_IO RuntimeType
   get_ParameterType = invoke (CILInstance "get_ParameterType") (ParameterInfo -> CIL_IO RuntimeType)
 
+namespace AppDomain
+
+  CurrentDomain : CIL_IO AppDomain
+  CurrentDomain = invoke (CILStatic AppDomainTy "get_CurrentDomain") (CIL_IO AppDomain)
+
+  GetAssemblies : AppDomain -> CIL_IO (TypedArrayOf AssemblyTy)
+  GetAssemblies = invoke (CILInstance "GetAssemblies") (AppDomain -> CIL_IO (TypedArrayOf AssemblyTy))
