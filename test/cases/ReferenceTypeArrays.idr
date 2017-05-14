@@ -11,14 +11,10 @@ import CIL.FFI.Array
 import Data.Vect
 
 ToCharArray : String -> CIL_IO CharArray
-ToCharArray =
-  invoke (CILInstance "ToCharArray")
-         (String -> CIL_IO CharArray)
+ToCharArray = invokeInstance "ToCharArray" (String -> CIL_IO CharArray)
 
 Split : String -> CharArray -> CIL_IO StringArray
-Split =
-  invoke (CILInstance "Split")
-         (String -> CharArray -> CIL_IO StringArray)
+Split = invokeInstance "Split" (String -> CharArray -> CIL_IO StringArray)
 
 putAll : StringArray -> CIL_IO ()
 putAll ss = forEach_ ss putStrLn

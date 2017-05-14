@@ -27,10 +27,13 @@ putIsJust : Maybe String -> CIL_IO ()
 putIsJust (Just _) = putStrLn "is Just"
 putIsJust _        = putStrLn "is not Just"
 
+TheExportsTy : CILTy
+TheExportsTy = CILTyRef "" "TheExports"
+
 %inline
 invokeMaybeString : String -> Maybe String -> CIL_IO ()
 invokeMaybeString fn s =
-  invoke (CILStatic (CILTyRef "" "TheExports") fn) (Maybe String -> CIL_IO ()) s
+  invokeStatic TheExportsTy fn (Maybe String -> CIL_IO ()) s
 
 testFFI : Maybe String -> CIL_IO ()
 testFFI s = do
@@ -55,7 +58,7 @@ testMaybeInt b = printLn (maybeInt b)
 %inline
 invokeTestMaybeInt : Bool -> CIL_IO ()
 invokeTestMaybeInt =
-  invoke (CILStatic (CILTyRef "" "TheExports") "testMaybeInt") (Bool -> CIL_IO ())
+  invokeStatic TheExportsTy "testMaybeInt" (Bool -> CIL_IO ())
 
 main : CIL_IO ()
 main = do

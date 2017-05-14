@@ -25,67 +25,15 @@ import CIL.System.Reflection
 import Data.Vect
 
 %inline
-SystemMathMax : CILForeign
-SystemMathMax = CILStatic (CILTyRef "mscorlib" "System.Math") "Max"
-
-namespace System.Math.Int32
-  Max : Int -> Int -> CIL_IO Int
-  Max = invoke SystemMathMax (Int -> Int -> CIL_IO Int)
-
-namespace System.Math.Double
-  Max : Double -> Double -> CIL_IO Double
-  Max = invoke SystemMathMax (Double -> Double -> CIL_IO Double)
-
-namespace System.Text
-  StringBuilder : Type
-  StringBuilder = corlib "System.Text.StringBuilder"
-
-  implementation IsA Object StringBuilder where {}
-
-  %inline
-  invokeStringBuilder : String -> StringBuilder -> String -> CIL_IO StringBuilder
-  invokeStringBuilder fn = invoke (CILInstance fn) (StringBuilder -> String -> CIL_IO StringBuilder)
-
-  Append : StringBuilder -> String -> CIL_IO StringBuilder
-  Append = invokeStringBuilder "Append"
-
-  AppendLine : StringBuilder -> String -> CIL_IO StringBuilder
-  AppendLine = invokeStringBuilder "AppendLine"
-
-
-GuidTy : CILTy
-GuidTy = corlibTyVal "System.Guid"
-
-Guid : Type
-Guid = CIL $ GuidTy
-
-implementation IsA Object Guid where {}
-
-NewGuid : CIL_IO Guid
-NewGuid =
-  invoke (CILStatic GuidTy "NewGuid")
-         (CIL_IO Guid)
-
-ParseGuid : String -> CIL_IO Guid
-ParseGuid =
-  invoke (CILStatic GuidTy "Parse")
-         (String -> CIL_IO Guid)
-
-EmptyGuid : CIL_IO Guid
-EmptyGuid =
-  invoke (CILStaticField GuidTy "Empty")
-         (CIL_IO Guid)
-
-%inline
 objectArrayFor : Vect _ Object -> CIL_IO ObjectArray
 objectArrayFor xs = arrayOf CILTyObj xs
 
 testValueType : CIL_IO ()
 testValueType = do
-  guid  <- NewGuid
-  guid' <- ParseGuid !(ToString guid)
+  guid  <- Guid.NewGuid
+  guid' <- Guid.Parse !(ToString guid)
   printLn !(Equals guid guid')
-  ToString !EmptyGuid >>= putStrLn
+  ToString !Guid.Empty >>= putStrLn
 
 invokeStaticMethod : RuntimeType -> String -> Maybe ObjectArray -> CIL_IO (Maybe Object)
 invokeStaticMethod type methodName args =
@@ -129,14 +77,12 @@ unForeign ep = do
 ||| Invokes the exported function `createPerson` via the FFI.
 invokeCreatePerson : String -> String -> CIL_IO ExportedPerson
 invokeCreatePerson =
-  invoke (CILStatic TheExportsTy "createPerson")
-         (String -> String -> CIL_IO ExportedPerson)
+  invokeStatic TheExportsTy "createPerson" (String -> String -> CIL_IO ExportedPerson)
 
 %inline
 invokeAccessor : String -> ExportedPerson -> CIL_IO String
 invokeAccessor n =
-  invoke (CILStatic TheExportsTy n)
-         (ExportedPerson -> CIL_IO String)
+  invokeStatic TheExportsTy n (ExportedPerson -> CIL_IO String)
 
 testExportedRecord : CIL_IO ()
 testExportedRecord = do

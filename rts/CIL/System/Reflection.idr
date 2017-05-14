@@ -59,71 +59,57 @@ namespace BindingFlags
             , cilField Public 0x10
             ]
 
-GetExecutingAssembly : CIL_IO Assembly
-GetExecutingAssembly =
-  invoke (CILStatic AssemblyTy "GetExecutingAssembly")
-         (CIL_IO Assembly)
-
 namespace Assembly
 
+  GetExecutingAssembly : CIL_IO Assembly
+  GetExecutingAssembly = invokeStatic AssemblyTy "GetExecutingAssembly" (CIL_IO Assembly)
+
   GetType : Assembly -> String -> Bool -> CIL_IO RuntimeType
-  GetType =
-    invoke (CILInstance "GetType")
-           (Assembly -> String -> Bool -> CIL_IO RuntimeType)
+  GetType = invokeInstance "GetType" (Assembly -> String -> Bool -> CIL_IO RuntimeType)
 
   GetExportedTypes : Assembly -> CIL_IO TypeArray
-  GetExportedTypes =
-    invoke (CILInstance "GetExportedTypes")
-           (Assembly -> CIL_IO TypeArray)
+  GetExportedTypes = invokeInstance "GetExportedTypes" (Assembly -> CIL_IO TypeArray)
 
   Load : String -> CIL_IO Assembly
-  Load =
-    invoke (CILStatic AssemblyTy "Load")
-           (String -> CIL_IO Assembly)
+  Load = invokeStatic AssemblyTy "Load" (String -> CIL_IO Assembly)
 
 namespace RuntimeType
 
   get_Name : RuntimeType -> CIL_IO String
-  get_Name = invoke (CILInstance "get_Name") (RuntimeType -> CIL_IO String)
+  get_Name = invokeInstance "get_Name" (RuntimeType -> CIL_IO String)
 
   GetMethod : RuntimeType -> String -> CIL_IO (Maybe MethodInfo)
-  GetMethod =
-    invoke (CILInstance "GetMethod")
-           (RuntimeType -> String -> CIL_IO (Maybe MethodInfo))
+  GetMethod = invokeInstance "GetMethod" (RuntimeType -> String -> CIL_IO (Maybe MethodInfo))
 
   GetMethods : RuntimeType -> BindingFlags -> CIL_IO MethodInfoArray
-  GetMethods =
-    invoke (CILInstance "GetMethods")
-           (RuntimeType -> BindingFlags -> CIL_IO MethodInfoArray)
+  GetMethods = invokeInstance "GetMethods" (RuntimeType -> BindingFlags -> CIL_IO MethodInfoArray)
 
 namespace MethodInfo
 
   get_Name : MethodInfo -> CIL_IO String
-  get_Name = invoke (CILInstance "get_Name") (MethodInfo -> CIL_IO String)
+  get_Name = invokeInstance "get_Name" (MethodInfo -> CIL_IO String)
 
   GetParameters : MethodInfo -> CIL_IO ParameterInfoArray
-  GetParameters = invoke (CILInstance "GetParameters") (MethodInfo -> CIL_IO ParameterInfoArray)
+  GetParameters = invokeInstance "GetParameters" (MethodInfo -> CIL_IO ParameterInfoArray)
 
   get_ReturnType : MethodInfo -> CIL_IO RuntimeType
-  get_ReturnType = invoke (CILInstance "get_ReturnType") (MethodInfo -> CIL_IO RuntimeType)
+  get_ReturnType = invokeInstance "get_ReturnType" (MethodInfo -> CIL_IO RuntimeType)
 
   Invoke : MethodInfo -> Maybe Object -> Maybe ObjectArray -> CIL_IO Object
-  Invoke =
-    invoke (CILInstance "Invoke")
-           (MethodInfo -> Maybe Object -> Maybe ObjectArray -> CIL_IO Object)
+  Invoke = invokeInstance "Invoke" (MethodInfo -> Maybe Object -> Maybe ObjectArray -> CIL_IO Object)
 
 namespace ParameterInfo
 
   get_Name : ParameterInfo -> CIL_IO String
-  get_Name = invoke (CILInstance "get_Name") (ParameterInfo -> CIL_IO String)
+  get_Name = invokeInstance "get_Name" (ParameterInfo -> CIL_IO String)
 
   get_ParameterType : ParameterInfo -> CIL_IO RuntimeType
-  get_ParameterType = invoke (CILInstance "get_ParameterType") (ParameterInfo -> CIL_IO RuntimeType)
+  get_ParameterType = invokeInstance "get_ParameterType" (ParameterInfo -> CIL_IO RuntimeType)
 
 namespace AppDomain
 
   CurrentDomain : CIL_IO AppDomain
-  CurrentDomain = invoke (CILStatic AppDomainTy "get_CurrentDomain") (CIL_IO AppDomain)
+  CurrentDomain = invokeStatic AppDomainTy "get_CurrentDomain" (CIL_IO AppDomain)
 
   GetAssemblies : AppDomain -> CIL_IO (TypedArrayOf AssemblyTy)
-  GetAssemblies = invoke (CILInstance "GetAssemblies") (AppDomain -> CIL_IO (TypedArrayOf AssemblyTy))
+  GetAssemblies = invokeInstance "GetAssemblies" (AppDomain -> CIL_IO (TypedArrayOf AssemblyTy))

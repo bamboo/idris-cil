@@ -20,10 +20,10 @@ data CILTy =
   CILTyGenMethodParam String
 
 Eq CILTy where
-  (CILTyGen def args) == (CILTyGen def' args') = def  == def' && assert_total (args == args')
   (CILTyRef as tn)    == (CILTyRef as' tn')    = as   == as'  && tn == tn'
   (CILTyVal as tn)    == (CILTyVal as' tn')    = as   == as'  && tn == tn'
   (CILTyArr elTy)     == (CILTyArr elTy')      = elTy == elTy'
+  (CILTyGen def args) == (CILTyGen def' args') = def  == def' && assert_total (args == args')
   _                   == _                     = False
 
 %inline
@@ -135,14 +135,20 @@ CIL_IO = IO' FFI_CIL
 
 ||| CIL FFI.
 %inline
-invoke : CILForeign -> (ty : Type) ->
-         {auto fty : FTy FFI_CIL [] ty} -> ty
+invoke : CILForeign -> (ty : Type) -> {auto fty : FTy FFI_CIL [] ty} -> ty
 invoke ffi ty = foreign FFI_CIL ffi ty
 
 %inline
-new : (ty : Type) ->
-      {auto fty : FTy FFI_CIL [] ty} -> ty
+new : (ty : Type) -> {auto fty : FTy FFI_CIL [] ty} -> ty
 new ty = invoke CILConstructor ty
+
+%inline
+invokeInstance : String -> (ty : Type) -> {auto fty : FTy FFI_CIL [] ty} -> ty
+invokeInstance memberName = invoke (CILInstance memberName)
+
+%inline
+invokeStatic : CILTy -> String -> (ty : Type) -> {auto fty : FTy FFI_CIL [] ty} -> ty
+invokeStatic declTy memberName = invoke (CILStatic declTy memberName)
 
 %inline
 delegate : (ty : CILTy) -> (fnT : Type) -> fnT ->
@@ -168,16 +174,19 @@ corlibTyVal = CILTyVal "mscorlib"
 corlib : String -> Type
 corlib = CIL . corlibTy
 
-Object : Type
-Object = CIL CILTyObj
+namespace System
 
-%inline
-RuntimeTypeTy : CILTy
-RuntimeTypeTy = corlibTy "System.Type"
+  Object : Type
+  Object = CIL CILTyObj
 
-%inline
-RuntimeType : Type
-RuntimeType = CIL RuntimeTypeTy
+  %inline
+  RuntimeTypeTy : CILTy
+  RuntimeTypeTy = corlibTy "System.Type"
+
+  %inline
+  RuntimeType : Type
+  RuntimeType = CIL RuntimeTypeTy
+
 
 %inline
 typeOf : CILTy -> CIL_IO RuntimeType
@@ -199,17 +208,24 @@ IsA Object RuntimeType where {}
 asObject : IsA Object a => a -> Object
 asObject a = believe_me a
 
-ToString : IsA Object o => o -> CIL_IO String
-ToString obj =
-  invoke (CILInstance "ToString")
-         (Object -> CIL_IO String)
-         (asObject obj)
 
-Equals : IsA Object a => a -> a -> CIL_IO Bool
-Equals x y =
-  invoke (CILInstance "Equals")
-         (Object -> Object -> CIL_IO Bool)
-         (asObject x) (asObject y)
+namespace System.Object
+
+  %inline
+  ToString : IsA Object o => o -> CIL_IO String
+  ToString obj =
+    invokeInstance
+      "ToString"
+      (Object -> CIL_IO String)
+      (asObject obj)
+
+  %inline
+  Equals : IsA Object a => a -> a -> CIL_IO Bool
+  Equals x y =
+    invokeInstance
+      "Equals"
+      (Object -> Object -> CIL_IO Bool)
+      (asObject x) (asObject y)
 
 
 namespace System.Array
@@ -222,13 +238,11 @@ namespace System.Array
 
   CreateInstance : RuntimeType -> Int -> CIL_IO Array
   CreateInstance =
-    invoke (CILStatic ArrayTy "CreateInstance")
-           (RuntimeType -> Int -> CIL_IO Array)
+    invokeStatic ArrayTy "CreateInstance" (RuntimeType -> Int -> CIL_IO Array)
 
   SetValue : Array -> Object -> Int -> CIL_IO ()
   SetValue =
-    invoke (CILInstance "SetValue")
-           (Array -> Object -> Int -> CIL_IO ())
+    invokeInstance "SetValue" (Array -> Object -> Int -> CIL_IO ())
 
 
 namespace System.Console
@@ -237,7 +251,7 @@ namespace System.Console
   ConsoleTy = corlibTy "System.Console"
 
   invokeConsole : String -> (ty: Type) -> {auto fty : FTy FFI_CIL [] ty} -> ty
-  invokeConsole fn ty = invoke (CILStatic ConsoleTy fn) ty
+  invokeConsole = invokeStatic ConsoleTy
 
   namespace Char
 
@@ -252,13 +266,70 @@ namespace System.Console
     Write : String -> CIL_IO ()
     Write = invokeConsole "Write" (String -> CIL_IO ())
 
+
 namespace System.Convert
 
   ToInt32 : IsA Object a => a -> CIL_IO Int
   ToInt32 o =
-    invoke (CILStatic (corlibTy "System.Convert") "ToInt32")
-           (Object -> CIL_IO Int)
-           (asObject o)
+    invokeStatic (corlibTy "System.Convert") "ToInt32" (Object -> CIL_IO Int) (asObject o)
+
+
+namespace System.Math
+
+  %inline
+  SystemMathMax : CILForeign
+  SystemMathMax = CILStatic (CILTyRef "mscorlib" "System.Math") "Max"
+
+  namespace Int32
+
+    Max : Int -> Int -> CIL_IO Int
+    Max = invoke SystemMathMax (Int -> Int -> CIL_IO Int)
+
+  namespace Double
+
+    Max : Double -> Double -> CIL_IO Double
+    Max = invoke SystemMathMax (Double -> Double -> CIL_IO Double)
+
+
+namespace System.Text
+
+  StringBuilder : Type
+  StringBuilder = corlib "System.Text.StringBuilder"
+
+  IsA Object StringBuilder where {}
+
+  %inline
+  invokeStringBuilder : String -> StringBuilder -> String -> CIL_IO StringBuilder
+  invokeStringBuilder fn = invokeInstance fn (StringBuilder -> String -> CIL_IO StringBuilder)
+
+  Append : StringBuilder -> String -> CIL_IO StringBuilder
+  Append = invokeStringBuilder "Append"
+
+  AppendLine : StringBuilder -> String -> CIL_IO StringBuilder
+  AppendLine = invokeStringBuilder "AppendLine"
+
+
+namespace System
+
+  GuidTy : CILTy
+  GuidTy = corlibTyVal "System.Guid"
+
+  Guid : Type
+  Guid = CIL $ GuidTy
+
+  IsA Object Guid where {}
+
+  namespace Guid
+
+    NewGuid : CIL_IO Guid
+    NewGuid = invokeStatic GuidTy "NewGuid" (CIL_IO Guid)
+
+    Parse : String -> CIL_IO Guid
+    Parse = invokeStatic GuidTy "Parse" (String -> CIL_IO Guid)
+
+    Empty : CIL_IO Guid
+    Empty = invoke (CILStaticField GuidTy "Empty") (CIL_IO Guid)
+
 
 namespace Enums
 

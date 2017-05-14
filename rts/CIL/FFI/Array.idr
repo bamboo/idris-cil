@@ -42,18 +42,16 @@ CharArray = TypedArrayOf CILTyChar
 length : TypedArray cilTy elem
       -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> CIL_IO Int)}
       -> CIL_IO Nat
-length {cilTy} {elem} a = cast <$> invoke (CILInstance "get_Length")
-                                         (TypedArray cilTy elem -> CIL_IO Int)
-                                         a
+length {cilTy} {elem} a =
+  cast <$> invokeInstance "get_Length" (TypedArray cilTy elem -> CIL_IO Int) a
 
 %inline
 get : TypedArray cilTy elem
    -> (index : Int)
    -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> CIL_IO elem)}
    -> CIL_IO elem
-get {cilTy} {elem} a i = invoke (CILInstance "get_Item")
-                               (TypedArray cilTy elem -> Int -> CIL_IO elem)
-                               a i
+get {cilTy} {elem} a i =
+  invokeInstance "get_Item" (TypedArray cilTy elem -> Int -> CIL_IO elem) a i
 
 %inline
 set : TypedArray cilTy elem
@@ -61,9 +59,8 @@ set : TypedArray cilTy elem
    -> (element : elem)
    -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> elem -> CIL_IO ())}
    -> CIL_IO ()
-set {cilTy} {elem} a i e = invoke (CILInstance "set_Item")
-                                 (TypedArray cilTy elem -> Int -> elem -> CIL_IO ())
-                                 a i e
+set {cilTy} {elem} a i e =
+  invokeInstance "set_Item" (TypedArray cilTy elem -> Int -> elem -> CIL_IO ()) a i e
 
 %inline
 newArrayOf : (elTy : CILTy) -> Int -> CIL_IO (TypedArrayOf elTy)

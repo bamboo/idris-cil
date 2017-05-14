@@ -16,8 +16,7 @@ Thread = corlib "System.Threading.Thread"
 
 %inline
 invokeThread : String -> Thread -> CIL_IO ()
-invokeThread fn = invoke (CILInstance fn)
-                         (Thread -> CIL_IO ())
+invokeThread fn = invokeInstance fn (Thread -> CIL_IO ())
 
 Start : Thread -> CIL_IO ()
 Start = invokeThread "Start"

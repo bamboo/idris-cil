@@ -18,10 +18,10 @@ newDictionaryEntry key value = new (Object -> Object -> CIL_IO DictionaryEntry)
                                    (believe_me value)
 
 Key : DictionaryEntry -> CIL_IO Object
-Key = invoke (CILInstance "get_Key") (DictionaryEntry -> CIL_IO Object)
+Key = invokeInstance "get_Key" (DictionaryEntry -> CIL_IO Object)
 
 Value : DictionaryEntry -> CIL_IO Object
-Value = invoke (CILInstance "get_Value") (DictionaryEntry -> CIL_IO Object)
+Value = invokeInstance "get_Value" (DictionaryEntry -> CIL_IO Object)
 
 main : CIL_IO ()
 main = do
