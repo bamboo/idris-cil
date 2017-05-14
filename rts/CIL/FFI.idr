@@ -183,10 +183,11 @@ RuntimeType = CIL RuntimeTypeTy
 typeOf : CILTy -> CIL_IO RuntimeType
 typeOf t = invoke (CILTypeOf t) (CIL_IO RuntimeType)
 
--- inheritance can be encoded as class instances or implicit conversions
+||| `IsA a b` means `b` is a subtype of `a` in the CIL type system.
 interface IsA a b where {}
 
-IsA Object Object where {}
+||| Subtyping is reflexive.
+IsA a a where {}
 IsA Object String where {}
 IsA Object Int where {}
 IsA Object Integer where {}
