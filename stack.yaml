@@ -7,7 +7,7 @@ packages:
     extra-dep: true
   - location:
       git: https://github.com/idris-lang/Idris-dev.git
-      commit: fcbabc28343ca9fa159f6d7db3fc7bd20ca45dc9
+      commit: ffd2db0b307707dee923c4ae9b7b0448037188df
     extra-dep: true
 flags:
   idris:
