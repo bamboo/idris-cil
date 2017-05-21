@@ -73,6 +73,9 @@ namespace Assembly
   Load : String -> CIL_IO Assembly
   Load = invokeStatic AssemblyTy "Load" (String -> CIL_IO Assembly)
 
+  ReflectionOnlyLoadFrom : String -> CIL_IO Assembly
+  ReflectionOnlyLoadFrom = invokeStatic AssemblyTy "ReflectionOnlyLoadFrom" (String -> CIL_IO Assembly)
+
 namespace RuntimeType
 
   get_Name : RuntimeType -> CIL_IO String
