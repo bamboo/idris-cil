@@ -140,7 +140,7 @@ method decl@(SFun name ps _ sexp) = do
              mconcat [ [comment (show decl)]
                      , optimizeLocals lc (toList (cilForSexp <> singleton ret)) ]
   put cilCodegenState'
-  return $ Method attrs retType (cilName name) parameters (withMaxStack body)
+  return $ Method attrs retType (cilName name) parameters (withMaxStack body retType)
   where attrs      = [MaStatic, MaAssembly]
         retType    = if isEntryPoint then Cil.Void else Cil.Object
         parameters = param <$> ps
@@ -148,11 +148,13 @@ method decl@(SFun name ps _ sexp) = do
         locals lc  = fromList [localsInit $ local <$> [0..(lc - 1)] | lc > 0]
         local i    = Local Cil.Object ("l" <> show i)
         isEntryPoint = name == entryPointName
-        withMaxStack body = maxStack (maxStackFor body retType) : body
         removeLastTailCall :: [Instruction] -> [Instruction]
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
         removeLastTailCall _ = error "Entry point should end in tail call"
+
+withMaxStack :: [Instruction] -> PrimitiveType -> [Instruction]
+withMaxStack body retType = maxStack (maxStackFor body retType) : body
 
 data CilExport
   = CilFun  { unCilFun :: !MethodDef }
@@ -525,7 +527,7 @@ cilTypeOf t = tell [ ldtoken t
                    , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
 
 delegateFunction :: [MethAttr] -> PrimitiveType -> MethodName -> [(PrimitiveType, ParamName)] -> Bool -> [Instruction] -> MethodDef
-delegateFunction attrs retType fn ps io invocation = Method attrs retType fn parameters body
+delegateFunction attrs retType fn ps io invocation = Method attrs retType fn parameters (withMaxStack body retType)
   where parameters = uncurry (Param Nothing) <$> ps
         body       = if io
                         then loadNothing : dup : invocation <> [runIO, popBoxOrCast, ret]
