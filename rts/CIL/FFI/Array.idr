@@ -112,6 +112,12 @@ namespace Array
     loop Z     _ acc = pure acc
 
   %inline
+  toList : TypedArray cilTy elem
+       -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> CIL_IO elem)}
+       -> CIL_IO (List elem)
+  toList xs = foldr (\e, acc => pure (e :: acc)) [] xs
+
+  %inline
   forEach_ : TypedArray cilTy elem
           -> (elem -> CIL_IO ())
           -> {auto fty : FTy FFI_CIL [] (TypedArray cilTy elem -> Int -> CIL_IO elem)}
