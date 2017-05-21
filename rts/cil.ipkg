@@ -5,6 +5,7 @@ modules = CIL.FFI
         , CIL.FFI.Effects
         , CIL.FFI.Single
         , CIL.Elab.Enums
+        , CIL.System.Environment
         , CIL.System.IO.File
         , CIL.System.Reflection
         , Data.Vector
