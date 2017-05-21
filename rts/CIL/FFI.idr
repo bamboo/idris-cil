@@ -195,6 +195,10 @@ typeOf t = invoke (CILTypeOf t) (CIL_IO RuntimeType)
 ||| `IsA a b` means `b` is a subtype of `a` in the CIL type system.
 interface IsA a b where {}
 
+%inline
+upcast : IsA a b => b -> a
+upcast b = believe_me b
+
 ||| Subtyping is reflexive.
 IsA a a where {}
 IsA Object String where {}
@@ -203,10 +207,6 @@ IsA Object Integer where {}
 IsA Object Bool where {}
 IsA Object Double where {}
 IsA Object RuntimeType where {}
-
-%inline
-asObject : IsA Object a => a -> Object
-asObject a = believe_me a
 
 
 namespace System.Object
@@ -217,7 +217,7 @@ namespace System.Object
     invokeInstance
       "ToString"
       (Object -> CIL_IO String)
-      (asObject obj)
+      (upcast obj)
 
   %inline
   Equals : IsA Object a => a -> a -> CIL_IO Bool
@@ -225,7 +225,7 @@ namespace System.Object
     invokeInstance
       "Equals"
       (Object -> Object -> CIL_IO Bool)
-      (asObject x) (asObject y)
+      (upcast x) (upcast y)
 
 
 namespace System.Array
@@ -271,7 +271,7 @@ namespace System.Convert
 
   ToInt32 : IsA Object a => a -> CIL_IO Int
   ToInt32 o =
-    invokeStatic (corlibTy "System.Convert") "ToInt32" (Object -> CIL_IO Int) (asObject o)
+    invokeStatic (corlibTy "System.Convert") "ToInt32" (Object -> CIL_IO Int) (upcast o)
 
 
 namespace System.Math

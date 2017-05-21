@@ -47,7 +47,7 @@ testExportedVoidFunction type = do
 
 testExportedBoolToStringIO : RuntimeType -> CIL_IO ()
 testExportedBoolToStringIO type = do
-  ret <- invokeStaticMethod type "exportedBoolToStringIO" (Just !(objectArrayFor [asObject True]))
+  ret <- invokeStaticMethod type "exportedBoolToStringIO" (Just !(objectArrayFor [upcast True]))
   retString <- maybe (pure "ERROR") ToString ret
   putStrLn $ "exportedBoolToStringIO => " ++ retString
 
@@ -126,7 +126,7 @@ printMethod t n = do
 
 testBoxingUnboxing : RuntimeType -> CIL_IO ()
 testBoxingUnboxing type = do
-  ret <- invokeStaticMethod type "exportedIncInt" (Just !(objectArrayFor [asObject 2]))
+  ret <- invokeStaticMethod type "exportedIncInt" (Just !(objectArrayFor [upcast 2]))
   maybe (pure "ERROR") ToString ret >>= putStrLn
 
 getExportsType : CIL_IO RuntimeType
