@@ -139,7 +139,7 @@ method decl@(SFun name ps _ sexp) = do
              mconcat [ [comment (show decl)]
                      , optimizeLocals lc (toList (cilForSexp <> singleton ret)) ]
   put cilCodegenState'
-  return $ Method attrs retType (cilName name) parameters (withMaxStack body retType)
+  return $ cilMethod attrs retType (cilName name) parameters body
   where attrs      = [MaStatic, MaAssembly]
         retType    = if isEntryPoint then Cil.Void else Cil.Object
         parameters = param <$> ps
@@ -151,9 +151,6 @@ method decl@(SFun name ps _ sexp) = do
         removeLastTailCall [OpCode (Tailcall e), OpCode Ret, OpCode Ldnull] = [OpCode e]
         removeLastTailCall (x:xs) = x:removeLastTailCall xs
         removeLastTailCall _ = error "Entry point should end in tail call"
-
-withMaxStack :: [Instruction] -> PrimitiveType -> [Instruction]
-withMaxStack body retType = maxStack (maxStackFor body retType) : body
 
 data CilExport
   = CilFun  { unCilFun :: !MethodDef }
@@ -518,7 +515,7 @@ cilTypeOf t = tell [ ldtoken t
                    , call [] runtimeType "mscorlib" "System.Type" "GetTypeFromHandle" [runtimeTypeHandle] ]
 
 delegateFunction :: [MethAttr] -> PrimitiveType -> MethodName -> [(PrimitiveType, ParamName)] -> Bool -> [Instruction] -> MethodDef
-delegateFunction attrs retType fn ps io invocation = Method attrs retType fn parameters (withMaxStack body retType)
+delegateFunction attrs retType fn ps io invocation = cilMethod attrs retType fn parameters body
   where parameters = uncurry (Param Nothing) <$> ps
         body       = if io
                         then loadNothing : dup : invocation <> [runIO, popBoxOrCast, ret]
@@ -530,6 +527,12 @@ delegateFunction attrs retType fn ps io invocation = Method attrs retType fn par
                          ValueType "" exportedDataType -> newobj "" exportedDataType [Cil.Object]
                          t | isValueType t -> unbox_any t
                          t -> castclass t
+
+cilMethod :: [MethAttr] -> PrimitiveType -> MethodName -> [Parameter] -> [Instruction] -> MethodDef
+cilMethod attrs retType name parameters body = Method attrs retType name parameters (withMaxStack body retType)
+  where
+    withMaxStack :: [Instruction] -> PrimitiveType -> [Instruction]
+    withMaxStack body retType = maxStack (maxStackFor body retType) : body
 
 paramNames :: [String]
 paramNames = (("p" <>) . show) <$> [0..]
