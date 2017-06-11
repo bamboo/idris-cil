@@ -9,6 +9,7 @@ import           IRTS.Cil.FFI
 import           IRTS.Cil.MaxStack
 import           IRTS.Cil.OptimizeLocals
 import           IRTS.Cil.Types
+import           IRTS.Cil.VersionParser (parseAssemblyRef)
 
 import           IRTS.CodegenCommon
 import           IRTS.Compiler
@@ -48,12 +49,9 @@ type CilCodegenInfo = (CodegenInfo, IState)
 
 data CilCodegenState = CilCodegenState
   { delegateTypes :: !(M.Map ForeignFunctionType MethodDef)
-  , assemblyRefs  :: !AssemblyRefSet
   , cafs          :: !CAFs
   , constTags     :: !IntSet.IntSet
   , recordArities :: !IntSet.IntSet }
-
-type AssemblyRefSet = Set.Set AssemblyRef
 
 type CAFs = M.Map Name TypeName
 
@@ -93,11 +91,12 @@ ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "/output:" <> output] "" >>= putStr
 
 assemblyFor :: CilCodegenInfo -> Assembly
-assemblyFor cci@(ci, _) = Assembly (mscorlibRef : assemblyRefs) asmName types
+assemblyFor cci@(ci, _) = Assembly (mscorlibRef : libs) asmName types
   where asmName = quoted $ takeBaseName (outputFile ci)
-        (types, assemblyRefs) = typesFor cci
+        libs = parseAssemblyRef <$> compileLibs ci
+        types = typesFor cci
 
-typesFor :: CilCodegenInfo -> ([TypeDef], [AssemblyRef])
+typesFor :: CilCodegenInfo -> [TypeDef]
 typesFor cci@(ci, _) =
   let (mainModule, CilCodegenState{..}) = runState (moduleFor ci) emptyCilCodegenState
       recordType' = recordType (M.elems delegateTypes) (IntSet.toList constTags)
@@ -106,13 +105,13 @@ typesFor cci@(ci, _) =
       types = mainModule : recordType' : nothingType : boxedBoolType : exportedTypes'
               ++ cafTypesFor (M.assocs cafs')
               ++ recordTypes
-  in (types, Set.toList assemblyRefs)
+  in types
 
 cafTypesFor :: [(Name, TypeName)] -> [TypeDef]
 cafTypesFor = fmap (uncurry cafTypeFor)
 
 emptyCilCodegenState :: CilCodegenState
-emptyCilCodegenState = CilCodegenState M.empty Set.empty M.empty IntSet.empty IntSet.empty
+emptyCilCodegenState = CilCodegenState M.empty M.empty IntSet.empty IntSet.empty
 
 moduleFor :: CodegenInfo -> CilCodegen TypeDef
 moduleFor ci = do methods <- mapM method declsWithBody
@@ -224,10 +223,6 @@ data CilEmitterState = CilEmitterState
   , cilCodegenState  :: !CilCodegenState }
 
 type CilEmitter a = RWS SimpleDeclaration MethodBody CilEmitterState a
-
-insertAssemblyRef :: AssemblyRef -> CilEmitterState -> CilEmitterState
-insertAssemblyRef assemblyRef ces@(CilEmitterState _ _ cgs@CilCodegenState{..}) =
-  ces { cilCodegenState = cgs { assemblyRefs = Set.insert assemblyRef assemblyRefs } }
 
 insertConstTag :: Int -> CilEmitterState -> CilEmitterState
 insertConstTag tag ces@(CilEmitterState _ _ cgs@CilCodegenState{..}) =
@@ -375,10 +370,6 @@ emit (SApp isTailCall n args) =
 
 emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
   where emitForeign :: CILForeign -> CilEmitter ()
-
-        emitForeign (CILAssemblyRef assemblyName version pubKeyToken) = do
-          modify (insertAssemblyRef (AssemblyRef assemblyName version pubKeyToken))
-          tell [ loadNothing ]
 
         emitForeign (CILDelegate t) =
           cilDelegate t retDesc args

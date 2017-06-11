@@ -68,8 +68,6 @@ data CILMethod =
 
 ||| A foreign descriptor.
 data CILForeign =
-  ||| Reference an external assembly by name, version and public key token.
-  CILAssemblyRef String String String |
   ||| Call the given foreign method.
   CILCall CILMethod | -- TODO: replace all other method forms by this one and introduce helper functions instead
   ||| Call the named instance method.
@@ -157,10 +155,6 @@ delegate : (ty : CILTy) -> (fnT : Type) -> fnT ->
 delegate ty fnT fn = invoke (CILDelegate ty)
                             (CilFn ty fnT -> CIL_IO (CilFn ty fnT))
                             (MkCilFn ty fn)
-%inline
-assemblyRef : String -> String -> String -> CIL_IO ()
-assemblyRef assemblyName version pubKeyToken =
-  invoke (CILAssemblyRef assemblyName version pubKeyToken) (CIL_IO ())
 
 %inline
 corlibTy : String -> CILTy

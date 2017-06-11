@@ -36,7 +36,6 @@ data CILForeign
   | CILDelegate       !CILTy
   | CILExport         !String
   | CILDefault
-  | CILAssemblyRef    !String !Version !String
   deriving Show
 
 parseDescriptor :: FDesc -> CILForeign
@@ -58,8 +57,6 @@ parseDescriptor (FApp ffi [ty])
   | ffi == sUN "CILTypeOf"         = CILTypeOf (foreignType ty)
 parseDescriptor (FApp ffi [method])
   | ffi == sUN "CILCall"           = CILCall (foreignMethod method)
-parseDescriptor (FApp ffi [FStr n, FStr v, FStr pubKeyToken])
-  | ffi == sUN "CILAssemblyRef"    = CILAssemblyRef n (parseVersion v) pubKeyToken
 parseDescriptor e = error $ "invalid foreign descriptor: " <> show e
 
 foreignMethod :: FDesc -> MethodRef

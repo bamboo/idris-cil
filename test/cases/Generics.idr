@@ -28,6 +28,8 @@ CreateIntTuple =
          (Int -> Int -> CIL_IO IntTuple)
 
 
+%lib CIL "System.Collections, 4.0.10.0, B0 3F 5F 7F 11 D5 0A 3A"
+
 systemCollectionsTy : String -> CILTy
 systemCollectionsTy = CILTyRef "System.Collections"
 
@@ -50,13 +52,8 @@ Contains =
   invoke (CILInstanceCustom "Contains" [CILTyGenParam "0"] CILTyBool)
          (IntTupleHashSet -> IntTuple -> CIL_IO Bool)
 
-AssemblyReferences : CIL_IO ()
-AssemblyReferences =
-  assemblyRef "System.Collections" "4.0.10.0" "B0 3F 5F 7F 11 D5 0A 3A"
-
 main : CIL_IO ()
 main = do
-  AssemblyReferences
   CreateIntTuple 1 1 >>= ToString >>= putStrLn
   set <- new (CIL_IO IntTupleHashSet)
   ToString set >>= putStrLn
