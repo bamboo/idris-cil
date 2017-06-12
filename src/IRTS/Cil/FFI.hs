@@ -20,7 +20,7 @@ import           Idris.Core.TT (Name(..), sUN)
 import           Language.Cil (PrimitiveType(..), MethodRef(..), CallConv(..), Version)
 import           Language.Cil.Pretty (pr)
 
-import           IRTS.Cil.VersionParser
+import           IRTS.Cil.Parsers (parseVersion)
 
 type CILTy = PrimitiveType
 

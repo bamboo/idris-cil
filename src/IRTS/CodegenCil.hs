@@ -9,7 +9,7 @@ import           IRTS.Cil.FFI
 import           IRTS.Cil.MaxStack
 import           IRTS.Cil.OptimizeLocals
 import           IRTS.Cil.Types
-import           IRTS.Cil.VersionParser (parseAssemblyRef)
+import           IRTS.Cil.Parsers (parseAssemblyRef)
 
 import           IRTS.CodegenCommon
 import           IRTS.Compiler

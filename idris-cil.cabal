@@ -29,7 +29,7 @@ library
                   , IRTS.Cil.CaseDispatch
   other-modules:    IRTS.Cil.UnreachableCodeRemoval
                   , IRTS.Cil.FFI
-                  , IRTS.Cil.VersionParser
+                  , IRTS.Cil.Parsers
                   , IRTS.Cil.MaxStack
                   , IRTS.Cil.OptimizeLocals
                   , IRTS.Cil.Types
