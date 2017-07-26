@@ -44,3 +44,25 @@ Brought to you by @bamboo, @sangamon and [contributors](https://github.com/bambo
 ## License
 
 [![BSD3](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](LICENSE)
+
+## Requirements
+
+### .NET Core 1.1 with ilasm
+
+Install `ilasm` using nuget:
+
+    dotnet new console ilasm-setup
+    cd ilasm-setup
+    dotnet add package runtime.osx.10.10-x64.Microsoft.NETCore.ILAsm
+    cd .. && rm -fr ilasm-setup
+
+Replace the `runtime.osx.10.10-x64` prefix above with the right value for your system, for instance, `ubuntu.14.04-x64`.
+
+Add `ilasm` to your `PATH` with something like:
+
+    export PATH=$(find $HOME/.nuget/packages -name ilasm | xargs dirname):$PATH
+
+If you get an error from `ilasm` saying it cannot load `libcoreclr.dylib`, add the `dotnet/shared` dir to `DYLD_LIBRARY_PATH`:
+
+    export DYLD_LIBRARY_PATH=/usr/local/share/dotnet/shared/Microsoft.NETCore.App/1.1.2:$DYLD_LIBRARY_PATH
+
