@@ -88,7 +88,7 @@ codegenCil cci@(ci, istate) =
                               \}"
 
 ilasm :: String -> String -> IO ()
-ilasm input output = readProcess "ilasm" [input, "/output:" <> output] "" >>= putStr
+ilasm input output = readProcess "ilasm" [input, "-output=" <> output] "" >>= putStr
 
 assemblyFor :: CilCodegenInfo -> Assembly
 assemblyFor cci@(ci, _) = Assembly (mscorlibRef : libs) asmName types
