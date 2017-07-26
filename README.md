@@ -51,7 +51,7 @@ Brought to you by @bamboo, @sangamon and [contributors](https://github.com/bambo
 
 Install `ilasm` using nuget:
 
-    dotnet new console ilasm-setup
+    dotnet new console -o ilasm-setup
     cd ilasm-setup
     dotnet add package runtime.osx.10.10-x64.Microsoft.NETCore.ILAsm
     cd .. && rm -fr ilasm-setup
