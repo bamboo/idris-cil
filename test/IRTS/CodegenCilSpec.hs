@@ -4,11 +4,13 @@ import           Control.Arrow ((>>>))
 import           Control.Monad (forM_)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT)
 import           Control.Monad.Trans.State.Strict (StateT, evalStateT)
-import           Data.Monoid((<>))
+import           Data.Monoid ((<>))
 
+import           IRTS.Cil.Builders
 import           IRTS.CodegenCil
 import           Idris.AbsSyntax
 import           Idris.ElabDecls
+import           Language.Cil as Cil
 
 import           System.Directory
 import           System.Exit
@@ -49,10 +51,26 @@ firstCommentIn f = takeComment <$> readFile f
 
 exec :: FilePath -> IO String
 exec input = do
-  compileCodegenInfo input output >>= codegenCil
-  peverify output
+  compileCodegenInfo input output >>= codegenCilTrans introduceFixtureType
+  --peverify output
   mono output
   where output = replaceExtension input "exe"
+
+introduceFixtureType :: Assembly -> Assembly
+introduceFixtureType (Assembly refs name types) =
+  Assembly refs name (fixtureType : types)
+
+fixtureType :: TypeDef
+fixtureType = publicSealedClass className noExtends noImplements allFields allMethods []
+  where className  = "Fixture"
+        allFields  = []
+        allMethods = [defaultCtorDef, passStringByRef]
+        passStringByRef =
+          Method [MaStatic, MaPublic] Cil.Void "PassStringByRef" [Param (Just PaOut) String "s"]
+                       [ ldarg 0
+                       , ldstr "The String"
+                       , stind_ref
+                       , ret ]
 
 compileToBytecode :: [FilePath] -> IO ()
 compileToBytecode files = traceProcess "idris" (options <> files)

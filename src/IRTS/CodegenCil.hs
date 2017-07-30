@@ -2,14 +2,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE ViewPatterns #-}
-module IRTS.CodegenCil (codegenCil, compileCilCodegenInfo, CilCodegenInfo) where
+module IRTS.CodegenCil (codegenCil, codegenCilTrans, compileCilCodegenInfo, CilCodegenInfo) where
 
+import           IRTS.Cil.Builders
 import           IRTS.Cil.CaseDispatch
 import           IRTS.Cil.FFI
 import           IRTS.Cil.MaxStack
 import           IRTS.Cil.OptimizeLocals
-import           IRTS.Cil.Types
 import           IRTS.Cil.Parsers (parseAssemblyRef)
+import           IRTS.Cil.Types
 
 import           IRTS.CodegenCommon
 import           IRTS.Compiler
@@ -32,18 +33,13 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import           Data.Char (ord)
 import           Data.DList (DList, empty, singleton, fromList, toList, snoc)
-import           Data.Function (on, (&))
 import qualified Data.IntSet as IntSet
-import           Data.List (partition, sortBy)
+import           Data.List (partition)
 import qualified Data.Map.Strict as M
-import           Data.Maybe (mapMaybe)
-import qualified Data.Set as Set
 import qualified Data.Text as T
 
 import           System.FilePath (takeBaseName, takeExtension, replaceExtension)
 import           System.Process (readProcess)
-
-import           GHC.Float
 
 type CilCodegenInfo = (CodegenInfo, IState)
 
@@ -66,14 +62,14 @@ compileCilCodegenInfo inputs output = do
   istate <- getIState
   pure (ci, istate)
 
-codegenCil :: CilCodegenInfo -> IO ()
-codegenCil cci@(ci, istate) =
+codegenCilTrans :: (Assembly -> Assembly) -> CilCodegenInfo -> IO ()
+codegenCilTrans assemblyTransformation cci@(ci, _) =
   do writeFileUTF8 cilFile cilText
      when (outputExtension /= ".il") $ do
        ilasm cilFile output
        writeFileUTF8 dotnetRuntimeConfigFile dotnetRuntimeConfig
   where cilFile = replaceExtension output "il"
-        cilText = pr (assemblyFor cci) ""
+        cilText = pr (assemblyTransformation . assemblyFor $ cci) ""
         output  = outputFile ci
         outputExtension = takeExtension output
         writeFileUTF8 f s = BS.writeFile f $ UTF8.fromString s
@@ -86,6 +82,9 @@ codegenCil cci@(ci, istate) =
                               \    }\n\
                               \  }\n\
                               \}"
+
+codegenCil :: CilCodegenInfo -> IO ()
+codegenCil = codegenCilTrans id
 
 ilasm :: String -> String -> IO ()
 ilasm input output = readProcess "ilasm" [input, "-output=" <> output] "" >>= putStr
@@ -1184,12 +1183,6 @@ nothingType = privateSealedClass className noExtends noImplements
                       , stsfld Cil.Object "" className nothingFieldName
                       , ret ]
 
-defaultCtorDef :: MethodDef
-defaultCtorDef = Constructor [MaPublic] Void []
-                   [ ldarg 0
-                   , call [CcInstance] Void "" "object" ".ctor" []
-                   , ret ]
-
 liftCAFOperation :: CAF a -> CilEmitter a
 liftCAFOperation op = do
   ces <- get
@@ -1333,15 +1326,6 @@ optimizeBooleanBoxing = go empty
     go acc (x : xs) = go (snoc acc x) xs
     go acc []       = toList acc
     boxedBoolFor = call [] Cil.Object "" boxedBoolTypeName "For" [Bool]
-
-privateSealedClass :: TypeName -> Maybe TypeSpec -> [TypeSpec] -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
-privateSealedClass = classDef [CaPrivate, CaSealed, CaBeforeFieldInit]
-
-publicSealedClass :: TypeName -> Maybe TypeSpec -> [TypeSpec] -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
-publicSealedClass = classDef [CaPublic, CaSealed, CaBeforeFieldInit]
-
-publicStruct :: TypeName -> [FieldDef] -> [MethodDef] -> [TypeDef] -> TypeDef
-publicStruct name = classDef [CaPublic] name (extends "[mscorlib]System.ValueType") noImplements
 
 array, systemArray, charArray :: PrimitiveType
 array = Array Cil.Object
