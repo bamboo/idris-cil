@@ -8,6 +8,7 @@ import Data.Vect
 %access public export
 
 IsA Object (TypedArray cilTy elem) where {}
+
 IsA Array (TypedArray cilTy elem) where {}
 
 total

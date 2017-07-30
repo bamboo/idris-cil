@@ -375,7 +375,7 @@ emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
 
         emitForeign CILConstructor =
           case retType of
-            Array _ -> emitNewArray retType
+            Array t -> emitNewArray t
             _       -> emitNewInstance
 
         emitForeign (CILInstance fn) = do
@@ -404,7 +404,7 @@ emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
             _ -> error $ "unsupported ffi descriptor: " <> show ffi
           acceptBoxOrPush retType
 
-        emitNewArray (Array elTy) = do
+        emitNewArray elTy = do
           loadArgs
           tell [ newarr elTy ]
 
@@ -433,12 +433,12 @@ emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
 
         ldelemFor String = [ ldelem_ref ]
         ldelemFor Cil.Object = [ ldelem_ref ]
-        ldelemFor ty@ReferenceType{} = [ ldelem_ref ]
+        ldelemFor ReferenceType{} = [ ldelem_ref ]
         ldelemFor ty    = error $ "No ldelem for " ++ show ty
 
         stelemFor String = stelem_ref
         stelemFor Cil.Object = stelem_ref
-        stelemFor ty@ReferenceType{} = stelem_ref
+        stelemFor ReferenceType{} = stelem_ref
         stelemFor Int32 = stelem_i4
         stelemFor ty    = error $ "No stelem for " ++ show ty
 
