@@ -173,18 +173,19 @@ unsupportedForeignType :: String -> a
 unsupportedForeignType = error . ("Unsupported foreign type: " <>)
 
 foreignTypes :: HM.HashMap Text PrimitiveType
-foreignTypes = HM.fromList [ ("CIL_Str",   String)
-                           , ("CIL_Ptr",   Object)
-                           , ("CIL_Float", Double64)
-                           , ("CIL_Bool",  Bool)
-                           , ("CIL_Unit",  Void)
-                           ]
+foreignTypes = HM.fromList
+  [ ("CIL_Str",   String)
+  , ("CIL_Ptr",   Object)
+  , ("CIL_Float", Double64)
+  , ("CIL_Bool",  Bool)
+  , ("CIL_Unit",  Void)
+  ]
 
-data ForeignFunctionType
-  = ForeignFunctionType { parameterTypes :: ![PrimitiveType]
-                        , returnType     :: !PrimitiveType
-                        , returnTypeIO   :: !Bool }
-  deriving (Eq, Ord, Show)
+data ForeignFunctionType = ForeignFunctionType
+  { parameterTypes :: ![PrimitiveType]
+  , returnType     :: !PrimitiveType
+  , returnTypeIO   :: !Bool
+  } deriving (Eq, Ord, Show)
 
 data CILFn
   = CILFnIO !PrimitiveType
