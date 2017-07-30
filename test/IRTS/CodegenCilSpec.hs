@@ -66,7 +66,7 @@ fixtureType = publicSealedClass className noExtends noImplements allFields allMe
         allFields  = []
         allMethods = [defaultCtorDef, passStringByRef]
         passStringByRef =
-          Method [MaStatic, MaPublic] Cil.Void "PassStringByRef" [Param (Just PaOut) String "s"]
+          Method [MaStatic, MaPublic] Cil.Void "PassStringByRef" [Param (Just PaOut) (ByRef String) "s"]
                        [ ldarg 0
                        , ldstr "The String"
                        , stind_ref

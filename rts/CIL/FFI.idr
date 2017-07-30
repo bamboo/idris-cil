@@ -97,12 +97,15 @@ data CILForeign =
 ||| @reprTy the native representation type (must be either Bits16 or Bits32)
 data CILEnum : (cilTy : CILTy) -> (reprTy : Type) -> Type
 
+data CILRef  : CILTy -> Type -> Type
+
 mutual
   data CIL_IntTypes  : Type -> Type where
        CIL_IntChar   : CIL_IntTypes Char
        CIL_IntNative : CIL_IntTypes Int
 
   data CIL_Types : Type -> Type where
+       CIL_Ref   : CIL_Types (CILRef refTy refT)
        CIL_Array : CIL_Types (TypedArray cilTy elTy)
        CIL_Str   : CIL_Types String
        CIL_Float : CIL_Types Double

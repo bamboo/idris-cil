@@ -101,7 +101,7 @@ typesFor cci@(ci, _) =
       recordType' = recordType (M.elems delegateTypes) (IntSet.toList constTags)
       (exportedTypes', cafs') = runState (exportedTypes cci) cafs
       recordTypes = recordTypeFor <$> IntSet.toList recordArities
-      types = mainModule : recordType' : nothingType : boxedBoolType : exportedTypes'
+      types = mainModule : recordType' : nothingType : boxedBoolType : byRefType : exportedTypes'
               ++ cafTypesFor (M.assocs cafs')
               ++ recordTypes
   in types
@@ -382,6 +382,7 @@ emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
           let declType : paramTypes = sig
           case declType of
             Array _ -> emitArrayFFI declType fn
+            ByRef t -> emitByRefFFI t fn
             _       -> emitInstanceFFI declType fn paramTypes
 
         emitForeign ffi = do
@@ -442,6 +443,16 @@ emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
         stelemFor Int32 = stelem_i4
         stelemFor ty    = error $ "No stelem for " ++ show ty
 
+        emitByRefFFI ty "get" = do
+          let byRefTy = genericByRefTyFor ty
+          let (assemblyName, typeName) = assemblyNameAndTypeFrom byRefTy
+          let [(_, byRefArg)] = typedArgs
+          load byRefArg
+          tell [ castclass byRefTy
+               , ldfld (GenericType 0) assemblyName typeName "value" ]
+          acceptBoxOrPush retType
+        emitByRefFFI _  fn = error $ "Unsupported operation on ByRef: " ++ fn
+
         emitNewInstance = do
           loadArgs
           let (assemblyName, typeName) = assemblyNameAndTypeFrom retType
@@ -465,7 +476,16 @@ emit (SForeign retDesc desc args) = emitForeign $ parseDescriptor desc
         loadArgs = mapM_ loadTypedArg typedArgs
         typedArgs = zip sig (snd <$> args)
 
+        genericByRefTyFor :: PrimitiveType -> PrimitiveType
+        genericByRefTyFor t = GenericReferenceTypeInstance "" "ByRef" [t]
+
         loadTypedArg :: (PrimitiveType, LVar) -> CilEmitter ()
+        loadTypedArg (ByRef t, loc) = do
+          load loc
+          let byRefTy = genericByRefTyFor t
+          let (assemblyName, typeName) = assemblyNameAndTypeFrom byRefTy
+          tell [ castclass byRefTy
+               , ldflda (GenericType 0) assemblyName typeName "value" ]
         loadTypedArg (t, loc) = do
           load loc
           castOrUnbox t
@@ -1312,6 +1332,25 @@ boxedBoolType = privateSealedClass className noExtends noImplements allFields al
                        , label "TRUE"
                        , ldBoxedTrue
                        , ret ]
+
+{-
+  class ByRef<T> {
+    public T value;
+    public ByRef(T value) { this.value = value; }
+  }
+-}
+byRefType :: TypeDef
+byRefType = GenericClass [CaPrivate, CaSealed] "ByRef" [GenParam "T"] [FieldDef valueField, MethodDef ctor]
+  where
+    valueField = Field [FaAssembly] genericType "value"
+    genericType = GenericType 0
+    ctor = Constructor [MaAssembly] Void [Param Nothing String "value"]
+             [ ldarg 0
+             , call [CcInstance] Void "" "object" ".ctor" []
+             , ldarg 0
+             , ldarg 1
+             , stfld genericType "" "class ByRef`1<!0>" "value"
+             , ret ]
 
 ldBoxedFalse, ldBoxedTrue :: Instruction
 ldBoxedFalse = ldsfld Cil.Object "" boxedBoolTypeName "False"

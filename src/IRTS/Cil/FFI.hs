@@ -96,6 +96,9 @@ foreignType (FApp cilTy [_, ty, _])
   | cilTy == sUN "CIL_FnT" = foreignType ty
 
 foreignType (FApp cilTy [_, ty])
+  | cilTy == sUN "CIL_Ref" = ByRef $ foreignType ty
+
+foreignType (FApp cilTy [_, ty])
   | cilTy == sUN "CIL_MaybeT" = foreignType ty
 
 foreignType (FApp cilTy [_, ty])
