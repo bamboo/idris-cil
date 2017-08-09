@@ -909,6 +909,7 @@ emitOp (LSLt (ATInt ITChar))  args = emitPrimitiveOp Char Int32 clt args
 emitOp (LSLt (ATInt _))       args = emitInt32Op clt args
 emitOp (LIntStr _)            [i]  = emitPrimitiveToString i
 emitOp (LIntFloat _)          [i]  = emitPrimitiveCast Int32 Double64 conv_r8 i
+emitOp (LFloatInt _)          [i]  = emitPrimitiveCast Double64 Int32 conv_i4 i
 emitOp (LIntCh _)             [i]  = emitPrimitiveCast Int32 Char conv_i2 i
 emitOp (LTimes ATFloat)       args = emitFloatOp mul args
 emitOp (LSDiv ATFloat)        args = emitFloatOp Cil.div args

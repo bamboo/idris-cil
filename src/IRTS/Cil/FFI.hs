@@ -112,6 +112,7 @@ foreignType (FApp cilTy [FStr assembly, FStr typeName])
     case (assembly, typeName) of
       ("", "object") -> Object
       ("", "string") -> String
+      ("", "void")   -> Void
       _              -> ReferenceType assembly typeName
 
 foreignType (FApp cilTy [FStr assembly, FStr typeName])
