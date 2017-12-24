@@ -16,11 +16,12 @@ import           IRTS.CodegenCommon
 import           IRTS.Compiler
 import           IRTS.Lang
 import           IRTS.Simplified
-import           Idris.AbsSyntax (Idris, IState(idris_patdefs), getIState, IRFormat(IBCFormat), Codegen(Via))
+import           Idris.AbsSyntax (Idris, IState(idris_patdefs), getIState )
 import           Idris.Core.CaseTree (CaseType(Shared))
 import           Idris.Core.TT hiding (Impossible)
 import           Idris.ElabDecls (elabPrims, elabMain)
 import           Idris.Main (loadInputs)
+import           Idris.Options (IRFormat(IBCFormat), Codegen(Via))
 
 import           Language.Cil
 import qualified Language.Cil as Cil

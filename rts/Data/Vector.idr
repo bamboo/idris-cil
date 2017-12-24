@@ -33,7 +33,7 @@ length xs = prim__Vector_length (believe_me xs)
 null : Vector a -> Bool
 null xs = prim__Vector_null (believe_me xs)
 
-infixl 6 !!
+infixl 10 !!
 
 ||| O(1) Indexing
 (!!) : Vector a -> Nat -> a

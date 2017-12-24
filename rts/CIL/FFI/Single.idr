@@ -32,6 +32,8 @@ implementation Num Single where
 implementation Neg Single where
   negate = prim__singleNeg
   (-) = prim__singleSub
+
+implementation Abs Single where
   abs = prim__singleAbs
 
 implementation Fractional Single where

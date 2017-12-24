@@ -17,7 +17,7 @@ cabal-version:       >=1.18
 
 custom-setup
   setup-depends: base
-               , Cabal >= 1.24 && < 1.25
+               , Cabal
                , process
 
 library
@@ -39,9 +39,9 @@ library
                   , containers
                   , unordered-containers
                   , directory
-                  , dlist >= 0.7.1.1
+                  , dlist
                   , filepath
-                  , idris >= 1.0
+                  , idris >= 1.1.1
                   , language-cil >= 0.4.1
                   , mtl
                   , process
@@ -58,7 +58,7 @@ executable idris-codegen-cil
                     , directory
                     , filepath
                     , haskeline
-                    , idris >= 1.0
+                    , idris >= 1.1.1
                     , mtl
                     , text
                     , transformers
@@ -91,7 +91,7 @@ test-suite spec
                   , hspec-expectations-pretty-diff
                   , smallcheck
                   , hspec-smallcheck
-                  , idris >= 1.0
+                  , idris >= 1.1.1
                   , idris-cil
 
 test-suite hlint
