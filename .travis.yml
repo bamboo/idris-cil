@@ -14,7 +14,7 @@ addons:
       - hvr-ghc
       - mono-nightly
     packages:
-      - ghc-8.0.1
+      - ghc-8.2.2
       - mono-devel
       - mono-utils
 
