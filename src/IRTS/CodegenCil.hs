@@ -185,10 +185,11 @@ originalParameterNamesOf fn@(NS n _) (_, istate) = do
 cilExport :: CilCodegenInfo -> Export -> CAF CilExport
 cilExport cci (ExportFun fn@(NS n _) desc rt ps) = do
   invocation <-
-    if null ps
-       then do instruction <- loadCAF fn
-               pure [instruction]
-       else pure (loadArgs <> [ app fn ps ])
+    --if null ps
+    --   then do instruction <- loadCAF fn
+    --           pure [instruction]
+    --   else
+      pure $ if (isIO rt) then (loadArgs <> (loadNothing:[ app' fn ps ])) else (loadArgs <> [ app fn ps ])
   pure . CilFun $ delegateFunction [MaPublic, MaStatic] retType exportName parameters io invocation
   where retType    = foreignType rt
         exportName = case desc of
@@ -197,7 +198,7 @@ cilExport cci (ExportFun fn@(NS n _) desc rt ps) = do
         parameters = zip paramTypes (maybe paramNames (<> paramNames) (originalParameterNamesOf fn cci))
         paramTypes = foreignType <$> ps
         loadArgs   = zip [0..] paramTypes >>= loadArg
-        io         = isIO rt
+        io         = False --isIO rt
 
 cilExport _ (ExportData (FStr exportedDataType)) = pure . CilType $ publicStruct exportedDataType [ptr] [ctor] []
   where ptr  = Field [FaAssembly, FaInitOnly] Cil.Object "ptr"
@@ -1396,6 +1397,9 @@ quoted name = "'" <> (name >>= validChar) <> "'"
 
 app :: Name -> [a] -> Instruction
 app n args = call [] Cil.Object "" moduleName (cilName n) (const Cil.Object <$> args)
+
+app' :: Name -> [a] -> Instruction
+app' n args = call [] Cil.Object "" moduleName (cilName n) (Cil.Object:(const Cil.Object <$> args))
 
 concatMapM :: Monad m => (a -> m [b]) -> [a] -> m [b]
 concatMapM a b = concat <$> mapM a b

@@ -53,7 +53,7 @@ maybeInt True  = Just 42
 maybeInt False = Nothing
 
 testMaybeInt : Bool -> CIL_IO ()
-testMaybeInt b = printLn (maybeInt b)
+testMaybeInt b = putStrLn $ show (maybeInt b)
 
 %inline
 invokeTestMaybeInt : Bool -> CIL_IO ()
