@@ -184,12 +184,12 @@ originalParameterNamesOf fn@(NS n _) (_, istate) = do
 
 cilExport :: CilCodegenInfo -> Export -> CAF CilExport
 cilExport cci (ExportFun fn@(NS n _) desc rt ps) = do
-  invocation <-
+  let invocation
     --if null ps
     --   then do instruction <- loadCAF fn
     --           pure [instruction]
     --   else
-      pure $ if (isIO rt) then (loadArgs <> (loadNothing:[ app' fn ps ])) else (loadArgs <> [ app fn ps ])
+       = if isIO rt then loadArgs <> (loadNothing:[ app' fn ps ]) else loadArgs <> [ app fn ps ]
   pure . CilFun $ delegateFunction [MaPublic, MaStatic] retType exportName parameters io invocation
   where retType    = foreignType rt
         exportName = case desc of
@@ -556,7 +556,7 @@ cilMethod attrs retType name parameters body = Method attrs retType name paramet
     withMaxStack body retType = maxStack (maxStackFor body retType) : body
 
 paramNames :: [String]
-paramNames = (("p" <>) . show) <$> [0..]
+paramNames = ("p" <>) . show <$> [0..]
 
 -- Exported data types are encoded as structs with a single `ptr` field
 loadArg :: (Int, PrimitiveType) -> [Instruction]
@@ -1248,7 +1248,7 @@ recordType methods constTags = classDef [CaPrivate, CaBeforeFieldInit] className
   where className  = recordTypeName
         allFields  = tag : constFields
         tag        = Field [FaPublic, FaInitOnly] Int32 "tag"
-        constFields = (Field [FaStatic, FaPublic, FaInitOnly] recordTypeRef . constRecordFieldNameForTag) <$> constTags
+        constFields = Field [FaStatic, FaPublic, FaInitOnly] recordTypeRef . constRecordFieldNameForTag <$> constTags
         allMethods = [cctor, ctor, toString] <> methods
         ctor       = Constructor [MaPublic] Void [ Param Nothing Int32 "tag" ]
                        [ ldarg 0

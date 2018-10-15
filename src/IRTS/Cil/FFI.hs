@@ -12,7 +12,7 @@ module IRTS.Cil.FFI
 import qualified Data.HashMap.Strict as HM
 import           Data.Maybe
 import           Data.Monoid ((<>))
-import           Data.Text hiding (map, init, last)
+import           Data.Text hiding (init, last)
 
 import           IRTS.Lang (FDesc(..))
 import           Idris.Core.TT (Name(..), sUN)
